@@ -1,0 +1,54 @@
+{
+  "name": "screen-recorder",
+  "productName": "Recorder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal screen recorder with Screen Studio-style motion",
+  "main": "dist/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && electron .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist:win": "node scripts/build.mjs && electron-builder --win zip --x64",
+    "dist:mac": "node scripts/build.mjs && electron-builder --mac dir --arm64"
+  },
+  "build": {
+    "appId": "dev.sujsap.recorder",
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "native/bin",
+        "to": "native",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": "zip",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": "dir",
+      "identity": null
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@webgpu/types": "^0.1.74",
+    "electron": "^38.8.6",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "mp4-muxer": "^5.2.2",
+    "mp4box": "^0.5.4"
+  }
+}
