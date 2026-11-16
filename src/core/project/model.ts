@@ -52,10 +52,12 @@ export interface Session {
 }
 
 export interface MediaTrack {
-  // Either an HLS playlist (init + segments) or a single mp4/m4a file, relative to recording/.
+  // Either an HLS playlist (init + segments) or a single media file, relative to recording/.
   playlist?: string;
   file?: string;
   sessionIndex: number;
+  // Recording time at which the track's first sample plays.
+  startOffsetMs: number;
 }
 
 export interface Recording {

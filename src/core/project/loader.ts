@@ -34,9 +34,9 @@ interface Metadata {
   mode?: string;
 }
 
-function track(file: string | undefined, sessionIndex: number): MediaTrack | null {
+function track(file: string | undefined, sessionIndex: number, startOffsetMs: number): MediaTrack | null {
   if (!file) return null;
-  return file.endsWith('.m3u8') ? { playlist: file, sessionIndex } : { file, sessionIndex };
+  return file.endsWith('.m3u8') ? { playlist: file, sessionIndex, startOffsetMs } : { file, sessionIndex, startOffsetMs };
 }
 
 // recordingTimeMs = processTimeMs - session.processTimeStartMs + session.recordingStartMs, sessions
@@ -79,8 +79,17 @@ export function loadRecording(reader: BundleReader): Recording {
   const crop = display?.configuration?.cropRect;
   const bounds = ds?.bounds ?? (crop ? { x: crop.x, y: crop.y, width: crop.width, height: crop.height } : { x: 0, y: 0, width: 1920, height: 1080 });
 
+  // A track session can start slightly after the recording session (devices open late).
   const tracks = (t: string) =>
-    byType(t).flatMap((r) => (r.sessions ?? []).map((s, i) => track(s.outputFilename, i)).filter((x): x is MediaTrack => !!x));
+    byType(t).flatMap((r) =>
+      (r.sessions ?? [])
+        .map((s, i) => {
+          const base = sessions[i];
+          const offset = base ? s.processTimeStartMs - base.processTimeStartMs + base.recordingStartMs : 0;
+          return track(s.outputFilename, i, offset);
+        })
+        .filter((x): x is MediaTrack => !!x),
+    );
 
   // Event coordinates are display-global points; make them relative to the recorded bounds.
   for (const e of mouseEvents) {
