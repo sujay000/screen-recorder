@@ -6,6 +6,8 @@ use crate::bundle::{KeyRecord, MouseRecord};
 use std::sync::atomic::Ordering;
 use std::thread::{self, JoinHandle};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::HINSTANCE;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -124,8 +126,10 @@ pub struct InputThread {
 pub fn start() -> Result<InputThread, String> {
     let (tx, rx) = std::sync::mpsc::channel::<Result<u32, String>>();
     let handle = thread::spawn(move || unsafe {
-        let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0);
-        let keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), None, 0);
+        // Global low-level hooks need the module that contains the hook procedures.
+        let module = GetModuleHandleW(None).ok().map(|m| HINSTANCE(m.0));
+        let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), module, 0);
+        let keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), module, 0);
         let (mouse, keyboard) = match (mouse, keyboard) {
             (Ok(m), Ok(k)) => (m, k),
             (m, k) => {

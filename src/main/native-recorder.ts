@@ -28,11 +28,12 @@ export class NativeRecorder {
     return this.child !== null;
   }
 
-  start(exe: string, bundlePath: string, monitorIndex: number, onEvent: (e: HelperEvent) => void): Promise<HelperEvent> {
+  // `at` is a physical screen point inside the display to record.
+  start(exe: string, bundlePath: string, at: { x: number; y: number }, onEvent: (e: HelperEvent) => void): Promise<HelperEvent> {
     if (this.child) throw new Error('Already recording');
     const outDir = path.join(bundlePath, 'recording');
     fs.mkdirSync(outDir, { recursive: true });
-    const child = spawn(exe, ['record', '--out', outDir, '--monitor', String(monitorIndex)], { windowsHide: true });
+    const child = spawn(exe, ['record', '--out', outDir, '--at', `${Math.round(at.x)},${Math.round(at.y)}`], { windowsHide: true });
     this.child = child;
     let buffer = '';
     let resolveStarted!: (e: HelperEvent) => void;

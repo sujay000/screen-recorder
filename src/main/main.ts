@@ -96,7 +96,12 @@ function registerIpc(): void {
     const bundle = path.join(projectsRoot(), `Recording ${stamp}.recording`);
     recordingBundle = bundle;
     try {
-      await recorder.start(exe, bundle, Number(o.displayId) || 0, (ev) => {
+      const displays = screen.getAllDisplays();
+      const d = displays[Number(o.displayId)] ?? screen.getPrimaryDisplay();
+      const centre = { x: d.bounds.x + d.bounds.width / 2, y: d.bounds.y + d.bounds.height / 2 };
+      // Electron bounds are DIPs; the recorder works in physical pixels.
+      const at = process.platform === 'win32' ? screen.dipToScreenPoint(centre) : centre;
+      await recorder.start(exe, bundle, at, (ev) => {
         if (ev.event === 'error') sendStatus({ state: 'idle', message: ev.message });
       });
       const s: RecorderStatus = { state: 'recording', bundlePath: bundle };

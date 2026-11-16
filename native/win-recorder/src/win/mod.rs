@@ -11,12 +11,13 @@ use std::io::BufRead;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO};
+use windows::Win32::Foundation::POINT;
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint};
 use windows::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SetProcessDpiAwarenessContext};
 use windows_capture::capture::{Context, GraphicsCaptureApiHandler};
 use windows_capture::encoder::{AudioSettingsBuilder, ContainerSettingsBuilder, VideoEncoder, VideoSettingsBuilder, VideoSettingsSubType};
 use windows_capture::frame::Frame;
-use windows_capture::graphics_capture_api::InternalCaptureControl;
+use windows_capture::graphics_capture_api::{GraphicsCaptureApi, InternalCaptureControl};
 use windows_capture::monitor::Monitor;
 use windows_capture::settings::{ColorFormat, CursorCaptureSettings, DirtyRegionSettings, DrawBorderSettings, MinimumUpdateIntervalSettings, SecondaryWindowSettings, Settings};
 
@@ -100,7 +101,10 @@ pub fn record(args: &Args) -> Result<(), String> {
     let cursor_dir = out.join("cursors");
     std::fs::create_dir_all(&cursor_dir).map_err(|e| format!("Cannot create {}: {e}", cursor_dir.display()))?;
 
-    let monitor = Monitor::from_index(args.monitor + 1).map_err(|e| format!("Monitor {} not found: {e}", args.monitor + 1))?;
+    let monitor = match args.at {
+        Some((x, y)) => Monitor::from_raw_hmonitor(unsafe { MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST) }.0),
+        None => Monitor::from_index(args.monitor + 1).map_err(|e| format!("Monitor {} not found: {e}", args.monitor + 1))?,
+    };
     let geo = monitor_geometry(&monitor)?;
 
     state::init(state::Shared {
@@ -131,10 +135,21 @@ pub fn record(args: &Args) -> Result<(), String> {
     let input = input::start()?;
     let cursor = cursor::start();
 
+    // Excluding the cursor needs Windows 10 2004+. Hiding the yellow capture border needs a newer
+    // build; where it is missing we record with the border rather than fail.
+    if !GraphicsCaptureApi::is_cursor_settings_supported().unwrap_or(false) {
+        return Err("This Windows version cannot record without the system cursor. Windows 10 version 2004 or newer is required.".into());
+    }
+    let border = if GraphicsCaptureApi::is_border_settings_supported().unwrap_or(false) {
+        DrawBorderSettings::WithoutBorder
+    } else {
+        emit("log", serde_json::json!({ "message": "Capture border cannot be hidden on this Windows version" }));
+        DrawBorderSettings::Default
+    };
     let settings = Settings::new(
         monitor,
         CursorCaptureSettings::WithoutCursor,
-        DrawBorderSettings::WithoutBorder,
+        border,
         SecondaryWindowSettings::Default,
         MinimumUpdateIntervalSettings::Default,
         DirtyRegionSettings::Default,

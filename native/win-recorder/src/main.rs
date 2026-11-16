@@ -4,7 +4,7 @@
 //! global mouse/keyboard events and the cursor shape, and writes a recording bundle that the
 //! editor opens (layout in docs/ARCHITECTURE.md, same as the reference recorder).
 //!
-//! Protocol with the app: `recorder record --out <dir> --monitor <index>`; one JSON object per
+//! Protocol with the app: `recorder record --out <dir> [--at <x>,<y> | --monitor <index>]`; one JSON object per
 //! line on stdout (`{"event":"started"|"stopped"|"error"|"log", ...}`); "stop" on stdin ends the
 //! recording.
 
@@ -18,6 +18,9 @@ use std::path::PathBuf;
 pub struct Args {
     pub out: PathBuf,
     pub monitor: usize,
+    /// A physical screen point inside the monitor to record; preferred over the index because
+    /// the app's display order is not guaranteed to match the system's enumeration order.
+    pub at: Option<(i32, i32)>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -28,14 +31,20 @@ fn parse_args() -> Result<Args, String> {
     }
     let mut out = None;
     let mut monitor = 0usize;
+    let mut at = None;
     while let Some(a) = it.next() {
         match a.as_str() {
             "--out" => out = it.next().map(PathBuf::from),
             "--monitor" => monitor = it.next().and_then(|v| v.parse().ok()).ok_or("--monitor needs a number")?,
+            "--at" => {
+                let v = it.next().ok_or("--at needs x,y")?;
+                let (x, y) = v.split_once(',').ok_or("--at needs x,y")?;
+                at = Some((x.trim().parse().map_err(|_| "bad --at x")?, y.trim().parse().map_err(|_| "bad --at y")?));
+            }
             other => return Err(format!("unknown argument {other}")),
         }
     }
-    Ok(Args { out: out.ok_or("--out is required")?, monitor })
+    Ok(Args { out: out.ok_or("--out is required")?, monitor, at })
 }
 
 pub fn emit(event: &str, extra: serde_json::Value) {
