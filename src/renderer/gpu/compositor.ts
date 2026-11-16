@@ -24,8 +24,9 @@ export class Compositor {
 
   static async create(): Promise<Compositor> {
     if (!navigator.gpu) throw new Error('WebGPU is not available on this system.');
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    if (!adapter) throw new Error('No WebGPU adapter found.');
+    // Fall back to the software adapter on machines without a usable GPU (VMs, CI runners).
+    const adapter = (await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })) ?? (await navigator.gpu.requestAdapter({ forceFallbackAdapter: true }));
+    if (!adapter) throw new Error('No WebGPU adapter found. Update your graphics driver.');
     const device = await adapter.requestDevice();
     const format = navigator.gpu.getPreferredCanvasFormat();
     const module = device.createShaderModule({ code: shaderSource });

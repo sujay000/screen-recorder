@@ -12,6 +12,9 @@ import type { Project } from '../core/project/model';
 import { IPC, type AudioTrackInfo, type DisplayInfo, type OpenedProject, type RecorderStatus } from '../shared/ipc';
 import { NativeRecorder, helperPath } from './native-recorder';
 
+// Software WebGPU for machines without a GPU (CI, VMs). Opt-in, because it is slow.
+if (process.env.RECORDER_SOFTWARE_GPU === '1') app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+
 protocol.registerSchemesAsPrivileged([{ scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
 // Recording folders the page may read through media://. Only folders the user opened.

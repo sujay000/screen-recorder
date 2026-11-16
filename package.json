@@ -11,8 +11,9 @@
     "dev": "node scripts/build.mjs && electron .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dist:win": "node scripts/build.mjs && electron-builder --win zip --x64",
-    "dist:mac": "node scripts/build.mjs && electron-builder --mac dir --arm64"
+    "dist:win": "npm run build:recorder && node scripts/build.mjs && electron-builder --win zip --x64 --publish never",
+    "dist:mac": "node scripts/build.mjs && electron-builder --mac dir --arm64",
+    "build:recorder": "cd native/win-recorder && cargo build --release --target x86_64-pc-windows-gnu && cd ../.. && node -e \"require('fs').mkdirSync('native/bin',{recursive:true});require('fs').copyFileSync('native/win-recorder/target/x86_64-pc-windows-gnu/release/recorder.exe','native/bin/recorder.exe')\""
   },
   "build": {
     "appId": "dev.sujsap.recorder",
@@ -30,13 +31,24 @@
       }
     ],
     "win": {
-      "target": "zip",
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "signAndEditExecutable": false
     },
     "mac": {
       "target": "dir",
       "identity": null
-    }
+    },
+    "directories": {
+      "output": "release"
+    },
+    "asar": true
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -46,13 +58,11 @@
     "electron": "^38.8.6",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.7"
-  },
-  "dependencies": {
     "mp4-muxer": "^5.2.2",
     "mp4box": "^0.5.4",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   }
 }
