@@ -104,6 +104,8 @@ function registerIpc(): void {
       await recorder.start(exe, bundle, at, (ev) => {
         if (ev.event === 'error') sendStatus({ state: 'idle', message: ev.message });
       });
+      // Keep our own window out of the recording (Windows: WDA_EXCLUDEFROMCAPTURE).
+      window?.setContentProtection(true);
       const s: RecorderStatus = { state: 'recording', bundlePath: bundle };
       sendStatus(s);
       return s;
@@ -117,6 +119,7 @@ function registerIpc(): void {
     if (!recordingBundle) return null;
     sendStatus({ state: 'stopping' });
     const ev = await recorder.stop();
+    window?.setContentProtection(false);
     const bundle = recordingBundle;
     recordingBundle = null;
     lastRecordedBundle = bundle;
