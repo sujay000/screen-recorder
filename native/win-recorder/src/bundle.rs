@@ -126,3 +126,32 @@ pub fn write_metadata(dir: &Path, t: &SessionTimes, d: &DisplayInfo) -> io::Resu
     let text = serde_json::to_string_pretty(&meta).map_err(io::Error::other)?;
     fs::write(dir.join("metadata.json"), text)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Writes a small bundle with the real writer so the editor's loader can be tested against it
+    // (tests/core/recorder-contract.test.ts reads native/win-recorder/target/contract-bundle).
+    #[test]
+    fn writes_contract_bundle() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/contract-bundle/recording");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("cursors")).unwrap();
+        let mv = |t: f64, x: f64, y: f64| MouseRecord { kind: "mouseMoved", x, y, cursor_id: "arrow".into(), process_time_ms: t, unix_time_ms: 1_700_000_000_000.0 + t, active_modifiers: vec![], button: None };
+        let moves = vec![mv(1010.0, 100.0, 100.0), mv(1500.0, 400.0, 300.0), mv(2600.0, 800.0, 500.0)];
+        let click = |kind: &'static str, t: f64| MouseRecord { kind, x: 400.0, y: 300.0, cursor_id: "arrow".into(), process_time_ms: t, unix_time_ms: 0.0, active_modifiers: vec!["shift"], button: Some("left") };
+        let clicks = vec![click("mouseDown", 1600.0), click("mouseUp", 1680.0)];
+        let keys = vec![KeyRecord { kind: "keyDown", key_code: 72, is_a_repeat: false, process_time_ms: 2000.0, unix_time_ms: 0.0, active_modifiers: vec![] }];
+        let cursors = vec![CursorRecord { id: "arrow".into(), hot_spot: Point { x: 0.0, y: 0.0 }, standard_size: Size { width: 32.0, height: 32.0 }, system_cursor: true }];
+        write_events(&dir, &moves, &clicks, &keys, &cursors).unwrap();
+        write_metadata(
+            &dir,
+            &SessionTimes { process_time_start_ms: 1000.0, process_time_end_ms: 9000.0, unix_start_ms: 1_700_000_001_000.0, unix_end_ms: 1_700_000_009_000.0 },
+            &DisplayInfo { width_pt: 1280.0, height_pt: 720.0, recording_scale: 0.5, refresh_rate: 60 },
+        )
+        .unwrap();
+        let meta: serde_json::Value = serde_json::from_str(&fs::read_to_string(dir.join("metadata.json")).unwrap()).unwrap();
+        assert_eq!(meta["sessions"][0]["processTimeStartMs"], 1000.0);
+    }
+}
