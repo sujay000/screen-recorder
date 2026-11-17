@@ -16,7 +16,7 @@ const api: RecorderApi = {
   chooseExportPath: (n) => ipcRenderer.invoke(IPC.chooseExportPath, n),
   exportOpen: (p) => ipcRenderer.invoke(IPC.exportOpen, p),
   exportWrite: (h, pos, d) => ipcRenderer.invoke(IPC.exportWrite, h, pos, d),
-  exportClose: (h) => ipcRenderer.invoke(IPC.exportClose, h),
+  exportClose: (h, discard) => ipcRenderer.invoke(IPC.exportClose, h, discard),
   revealFile: (p) => ipcRenderer.invoke(IPC.revealFile, p),
   onRecorderStatus: (cb) => {
     const listener = (_e: unknown, s: RecorderStatus) => cb(s);

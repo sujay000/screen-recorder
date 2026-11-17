@@ -36,13 +36,14 @@ export interface RecorderApi {
   saveProject(project: Project): Promise<void>;
   listDisplays(): Promise<DisplayInfo[]>;
   startRecording(opts: { displayId: string; microphone: boolean; systemAudio: boolean }): Promise<RecorderStatus>;
-  // Resolves with the new bundle path once the native recorder has finished writing.
-  stopRecording(): Promise<string | null>;
+  // Resolves once the native recorder has finished writing. bundle is null when nothing usable was
+  // written; error carries the exact cause either way.
+  stopRecording(): Promise<{ bundle: string | null; error?: string } | null>;
   saveAudioTrack(bundlePath: string, fileName: string, data: ArrayBuffer, info: AudioTrackInfo): Promise<void>;
   chooseExportPath(defaultName: string): Promise<string | null>;
   exportOpen(filePath: string): Promise<number>; // returns a handle
   exportWrite(handle: number, position: number, data: ArrayBuffer): Promise<void>;
-  exportClose(handle: number): Promise<void>;
+  exportClose(handle: number, discard?: boolean): Promise<void>;
   revealFile(filePath: string): Promise<void>;
   onRecorderStatus(cb: (s: RecorderStatus) => void): () => void;
   // Test harness only (see main.ts runSelfTestIfRequested).

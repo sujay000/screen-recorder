@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import type { EditorController } from '../editor/editor-controller';
 import { Button, Row, Segmented } from '../ui/controls';
-import { Dialog, toast } from '../ui/overlay';
+import { Dialog, toast, toastError } from '../ui/overlay';
 
 type Phase = { kind: 'settings' } | { kind: 'running'; frame: number; frames: number; startedAt: number } | { kind: 'done'; filePath: string; seconds: number };
 
@@ -31,8 +31,8 @@ export function ExportDialog({ editor, open, onClose }: { editor: EditorControll
       await editor.export({ fps, height, filePath }, (p) => setPhase({ kind: 'running', frame: p.frame, frames: p.frames, startedAt }), abort.current.signal);
       setPhase({ kind: 'done', filePath, seconds: (performance.now() - startedAt) / 1000 });
     } catch (err) {
-      const cancelled = (err as Error).name === 'AbortError';
-      toast(cancelled ? 'Export cancelled' : 'Export failed', { tone: cancelled ? 'default' : 'error', description: cancelled ? undefined : (err as Error).message });
+      if ((err as Error).name === 'AbortError') toast('Export cancelled');
+      else toastError('Export failed', err);
       setPhase({ kind: 'settings' });
     } finally {
       abort.current = null;

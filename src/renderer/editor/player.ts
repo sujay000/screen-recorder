@@ -45,9 +45,12 @@ export class Player {
     return new FrameRenderer(this.scene, this.compositor, this.cursors, { fps: PREVIEW_FPS, motionBlurTaps: TAPS_PAUSED, motionBlurEnabled: true });
   }
 
-  async loadAudio(): Promise<void> {
+  // Returns descriptions of audio tracks that could not be loaded.
+  async loadAudio(): Promise<string[]> {
     this.audio = new AudioContext({ sampleRate: 48000 });
-    this.clips = await loadAudioClips(this.mediaBase, this.scene.project, this.audio);
+    const { clips, problems } = await loadAudioClips(this.mediaBase, this.scene.project, this.audio);
+    this.clips = clips;
+    return problems;
   }
 
   get duration(): number {
@@ -66,6 +69,7 @@ export class Player {
   setScene(scene: Scene): void {
     this.scene = scene;
     this.renderer = this.makeRenderer();
+    this.renderer.quality.motionBlurTaps = this.playing ? TAPS_PLAYING : TAPS_PAUSED;
     void this.requestDraw();
   }
 

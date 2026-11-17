@@ -7,7 +7,7 @@ import type { Scene } from '../../core/scene/scene';
 import type { Compositor } from '../gpu/compositor';
 import type { CursorImages } from '../media/cursor-images';
 import { type DemuxedVideo, SequentialFrames } from '../media/video-track';
-import { encodeAudioBuffer, loadAudioClips, mixClips, pickAudioCodec, SAMPLE_RATE } from '../media/audio';
+import { encodeMix, loadAudioClips, pickAudioCodec, SAMPLE_RATE } from '../media/audio';
 import { FrameRenderer } from '../render/frame-renderer';
 
 export interface ExportSettings {
@@ -42,7 +42,7 @@ async function pickVideoCodec(width: number, height: number, fps: number): Promi
       // next option
     }
   }
-  throw new Error('No supported video encoder (H.264 or VP9) on this system.');
+  throw new Error(`No supported video encoder for ${width}x${height} at ${fps} fps (tried H.264 hardware, H.264 software, VP9). Try a lower resolution.`);
 }
 
 export async function exportProject(
@@ -62,51 +62,59 @@ export async function exportProject(
   const { config: vConfig, muxCodec } = await pickVideoCodec(width, height, settings.fps);
   const aConfig = await pickAudioCodec();
   const audioCtx = new OfflineAudioContext(2, 1, SAMPLE_RATE);
-  const mixed = aConfig ? await mixClips(await loadAudioClips(opts.mediaBase, scene.project, audioCtx), durationMs) : null;
+  const audio = await loadAudioClips(opts.mediaBase, scene.project, audioCtx);
+  // Fail loudly rather than silently export without a track the user expects.
+  if (audio.problems.length) throw new Error(audio.problems.join(' '));
+  if (audio.clips.length && !aConfig) throw new Error('No AAC or Opus audio encoder is available on this system, so the audio cannot be exported.');
+  const withAudio = audio.clips.length > 0 && aConfig !== null;
 
   const handle = await api.exportOpen(settings.filePath);
   let writeChain = Promise.resolve();
   let writeError: Error | null = null;
-  const muxer = new Muxer({
-    target: new StreamTarget({
-      chunked: true,
-      onData: (data, position) => {
-        const copy = data.slice().buffer;
-        writeChain = writeChain.then(() => api.exportWrite(handle, position, copy)).catch((e) => {
-          writeError = e as Error;
-        });
-      },
-    }),
-    video: { codec: muxCodec, width, height, frameRate: settings.fps },
-    audio: mixed && aConfig ? { codec: aConfig.codec === 'opus' ? 'opus' : 'aac', numberOfChannels: 2, sampleRate: SAMPLE_RATE } : undefined,
-    fastStart: false,
-    firstTimestampBehavior: 'offset',
-  });
-
   let encodeError: Error | null = null;
-  const vEncoder = new VideoEncoder({
-    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-    error: (e) => (encodeError = e instanceof Error ? e : new Error(String(e))),
-  });
-  vEncoder.configure(vConfig);
-
-  if (mixed && aConfig) {
-    const aEncoder = new AudioEncoder({
-      output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
-      error: (e) => (encodeError = e instanceof Error ? e : new Error(String(e))),
-    });
-    aEncoder.configure(aConfig);
-    encodeAudioBuffer(mixed, aEncoder);
-    await aEncoder.flush();
-    aEncoder.close();
-  }
-
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext('webgpu')!;
-  compositor.configure(ctx);
-  const renderer = new FrameRenderer(scene, compositor, cursors, { fps: settings.fps, motionBlurTaps: EXPORT_MOTION_BLUR_TAPS, motionBlurEnabled: true });
-  const source = new SequentialFrames(video);
+  let vEncoder: VideoEncoder | null = null;
+  let source: SequentialFrames | null = null;
+  let succeeded = false;
   try {
+    const muxer = new Muxer({
+      target: new StreamTarget({
+        chunked: true,
+        onData: (data, position) => {
+          const copy = data.slice().buffer;
+          writeChain = writeChain.then(() => api.exportWrite(handle, position, copy)).catch((e) => {
+            writeError = e as Error;
+          });
+        },
+      }),
+      video: { codec: muxCodec, width, height, frameRate: settings.fps },
+      audio: withAudio ? { codec: aConfig!.codec === 'opus' ? 'opus' : 'aac', numberOfChannels: 2, sampleRate: SAMPLE_RATE } : undefined,
+      fastStart: false,
+      firstTimestampBehavior: 'offset',
+    });
+
+    vEncoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => (encodeError = new Error(`Video encoder (${vConfig.codec}): ${e instanceof Error ? e.message : String(e)}`)),
+    });
+    vEncoder.configure(vConfig);
+
+    if (withAudio) {
+      const aEncoder = new AudioEncoder({
+        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+        error: (e) => (encodeError = new Error(`Audio encoder (${aConfig!.codec}): ${e instanceof Error ? e.message : String(e)}`)),
+      });
+      aEncoder.configure(aConfig!);
+      await encodeMix(audio.clips, durationMs, aEncoder);
+      await aEncoder.flush();
+      aEncoder.close();
+    }
+
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('webgpu');
+    if (!ctx) throw new Error('WebGPU is not available for export (OffscreenCanvas webgpu context).');
+    compositor.configure(ctx);
+    const renderer = new FrameRenderer(scene, compositor, cursors, { fps: settings.fps, motionBlurTaps: EXPORT_MOTION_BLUR_TAPS, motionBlurEnabled: true });
+    source = new SequentialFrames(video);
     for (let f = 0; f < frames; f++) {
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
       if (encodeError) throw encodeError;
@@ -128,10 +136,11 @@ export async function exportProject(
     await writeChain;
     if (encodeError) throw encodeError;
     if (writeError) throw writeError;
+    succeeded = true;
   } finally {
-    source.close();
-    if (vEncoder.state !== 'closed') vEncoder.close();
+    source?.close();
+    if (vEncoder && vEncoder.state !== 'closed') vEncoder.close();
     await writeChain;
-    await api.exportClose(handle);
+    await api.exportClose(handle, !succeeded);
   }
 }

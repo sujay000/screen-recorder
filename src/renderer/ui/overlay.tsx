@@ -1,4 +1,5 @@
-// Dialog and toast notifications.
+// Dialog and toast notifications. Errors stay until dismissed and show the full detail (with a
+// copy button): this app is used by its developer, so exact causes beat friendly vagueness.
 
 import { type ReactNode, useEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -22,12 +23,26 @@ export function Dialog({ open, onClose, title, children, dismissible = true }: {
   );
 }
 
+// ---- Errors ----
+
+// Turns anything thrown into readable text. Electron wraps IPC errors as
+// "Error invoking remote method 'x': Error: <message>"; keep the channel, drop the noise.
+export function describeError(err: unknown): { message: string; detail: string } {
+  const e = err instanceof Error ? err : new Error(String(err));
+  let message = e.message;
+  const ipc = /^Error invoking remote method '([^']+)': (?:\w*Error: )?([\s\S]*)$/.exec(message);
+  if (ipc) message = `${ipc[2]} (in ${ipc[1]})`;
+  const detail = [e.name && e.name !== 'Error' ? `${e.name}: ${message}` : message, e.stack?.split('\n').slice(1).join('\n')].filter(Boolean).join('\n');
+  return { message, detail };
+}
+
 // ---- Toasts ----
 
 export interface Toast {
   id: number;
   title: string;
   description?: string;
+  detail?: string; // full text for errors (stack, codes); copyable
   tone: 'default' | 'success' | 'error';
 }
 
@@ -36,14 +51,23 @@ let nextId = 1;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
-export function toast(title: string, opts: { description?: string; tone?: Toast['tone']; durationMs?: number } = {}): void {
-  const t: Toast = { id: nextId++, title, description: opts.description, tone: opts.tone ?? 'default' };
-  toasts = [...toasts, t].slice(-4);
+export function dismissToast(id: number): void {
+  toasts = toasts.filter((x) => x.id !== id);
   emit();
-  setTimeout(() => {
-    toasts = toasts.filter((x) => x.id !== t.id);
-    emit();
-  }, opts.durationMs ?? (t.tone === 'error' ? 7000 : 3500));
+}
+
+export function toast(title: string, opts: { description?: string; detail?: string; tone?: Toast['tone']; durationMs?: number } = {}): void {
+  const t: Toast = { id: nextId++, title, description: opts.description, detail: opts.detail, tone: opts.tone ?? 'default' };
+  toasts = [...toasts, t].slice(-5);
+  emit();
+  // Errors stay until dismissed.
+  if (t.tone !== 'error') setTimeout(() => dismissToast(t.id), opts.durationMs ?? 3500);
+}
+
+export function toastError(title: string, err: unknown): void {
+  const { message, detail } = describeError(err);
+  console.error(title, err);
+  toast(title, { tone: 'error', description: message, detail });
 }
 
 export function Toaster() {
@@ -58,8 +82,24 @@ export function Toaster() {
     <div className="toaster" aria-live="polite">
       {list.map((t) => (
         <div key={t.id} className={`toast toast-${t.tone}`}>
-          <div className="toast-title">{t.title}</div>
+          <div className="toast-head">
+            <div className="toast-title">{t.title}</div>
+            {t.tone === 'error' && (
+              <div className="toast-actions">
+                <button onClick={() => void navigator.clipboard.writeText([t.title, t.description, t.detail].filter(Boolean).join('\n'))}>Copy</button>
+                <button onClick={() => dismissToast(t.id)} aria-label="Dismiss">
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
           {t.description && <div className="toast-desc">{t.description}</div>}
+          {t.detail && (
+            <details className="toast-detail">
+              <summary>Details</summary>
+              <pre>{t.detail}</pre>
+            </details>
+          )}
         </div>
       ))}
     </div>

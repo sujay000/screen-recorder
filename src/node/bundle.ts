@@ -34,9 +34,21 @@ export function openProject(bundlePath: string): Project {
   const name = path.basename(bundlePath).replace(/\.(screenstudio|recording)$/, '');
   if (fs.existsSync(statePath)) {
     const s = JSON.parse(fs.readFileSync(statePath, 'utf8')) as SavedEditorState;
-    return { path: bundlePath, name, recording, config: { ...defaultConfig(), ...s.config }, zooms: s.zooms, slices: s.slices };
+    return { path: bundlePath, name, recording, config: mergeDefaults(defaultConfig(), s.config), zooms: s.zooms ?? generateAutoZooms(recording), slices: s.slices ?? defaultSlices(recording) };
   }
   return { path: bundlePath, name, recording, config: defaultConfig(), zooms: generateAutoZooms(recording), slices: defaultSlices(recording) };
+}
+
+// Deep merge saved values over defaults, so settings added in later versions get their default
+// instead of undefined. Arrays and nulls are taken as saved.
+function mergeDefaults<T>(defaults: T, saved: unknown): T {
+  if (saved === undefined) return defaults;
+  if (defaults === null || typeof defaults !== 'object' || Array.isArray(defaults) || saved === null || typeof saved !== 'object' || Array.isArray(saved)) {
+    return saved as T;
+  }
+  const out: Record<string, unknown> = { ...(defaults as Record<string, unknown>) };
+  for (const [k, v] of Object.entries(saved as Record<string, unknown>)) out[k] = mergeDefaults((defaults as Record<string, unknown>)[k], v);
+  return out as T;
 }
 
 export function saveProject(p: Project): void {

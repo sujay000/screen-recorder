@@ -44,6 +44,16 @@ export class NativeRecorder {
     });
     let resolveStopped!: (e: HelperEvent) => void;
     this.stopped = new Promise<HelperEvent>((res) => (resolveStopped = res));
+    let lastError: string | null = null;
+    // Spawn failures (missing exe, blocked by antivirus) and a closed stdin must not crash the app.
+    child.on('error', (err) => {
+      lastError = `Could not run the recorder: ${err.message}`;
+      onEvent({ event: 'error', message: lastError });
+      rejectStarted(new Error(lastError));
+      this.child = null;
+      resolveStopped({ event: 'error', message: lastError });
+    });
+    child.stdin.on('error', () => {});
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
       buffer += chunk;
@@ -59,6 +69,7 @@ export class NativeRecorder {
           ev = { event: 'log', message: line };
         }
         onEvent(ev);
+        if (ev.event === 'error') lastError = ev.message ?? 'Recorder failed';
         if (ev.event === 'started') resolveStarted(ev);
         if (ev.event === 'error') rejectStarted(new Error(ev.message ?? 'Recorder failed'));
         if (ev.event === 'stopped') resolveStopped(ev);
@@ -68,7 +79,7 @@ export class NativeRecorder {
     child.stderr.on('data', (d: string) => onEvent({ event: 'log', message: d.trim() }));
     child.on('exit', (code) => {
       this.child = null;
-      const ev: HelperEvent = code === 0 ? { event: 'stopped' } : { event: 'error', message: `Recorder exited with code ${code}` };
+      const ev: HelperEvent = code === 0 ? { event: 'stopped' } : { event: 'error', message: lastError ?? `Recorder exited with code ${code}` };
       rejectStarted(new Error(ev.message ?? 'Recorder exited before starting'));
       resolveStopped(ev);
     });
@@ -76,7 +87,7 @@ export class NativeRecorder {
   }
 
   async stop(): Promise<HelperEvent> {
-    if (!this.child || !this.stopped) return { event: 'stopped' };
+    if (!this.child || !this.stopped) return this.stopped ?? { event: 'stopped' };
     this.child.stdin.write('stop\n');
     return this.stopped;
   }

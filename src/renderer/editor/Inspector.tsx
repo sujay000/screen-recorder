@@ -131,7 +131,7 @@ export function Inspector({ editor, selectedZoom, onDeselect }: { editor: Editor
                         edit((cfg) => {
                           cfg.styles.background.type = 'color';
                           cfg.styles.background.color = e.target.value;
-                        }, false)
+                        })
                       }
                     />
                   </label>

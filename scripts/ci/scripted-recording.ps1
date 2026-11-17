@@ -21,12 +21,18 @@ $psi.FileName = $Recorder
 $psi.Arguments = "record --out `"$Bundle\recording`" --monitor 0"
 $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
 $psi.UseShellExecute = $false
 $p = [System.Diagnostics.Process]::Start($psi)
 
-$started = $p.StandardOutput.ReadLine()
-Write-Host "recorder: $started"
-if ($started -notmatch '"started"') { throw "Recorder did not start: $started" }
+# Log lines may come before "started"; read until started or error.
+while ($true) {
+  $line = $p.StandardOutput.ReadLine()
+  if ($null -eq $line) { throw "Recorder exited before starting: $($p.StandardError.ReadToEnd())" }
+  Write-Host "recorder: $line"
+  if ($line -match '"error"') { throw "Recorder failed: $line" }
+  if ($line -match '"started"') { break }
+}
 
 function Glide($x0, $y0, $x1, $y1, $steps) {
   for ($i = 0; $i -le $steps; $i++) {
@@ -45,7 +51,7 @@ Glide 400 500 700 650 40; [Input]::mouse_event(0x04, 0, 0, 0, [UIntPtr]::Zero)
 Start-Sleep -Seconds 2
 
 $p.StandardInput.WriteLine("stop")
-$stopped = $p.StandardOutput.ReadLine()
-Write-Host "recorder: $stopped"
+$rest = $p.StandardOutput.ReadToEnd()
+Write-Host "recorder: $rest"
 $p.WaitForExit(30000) | Out-Null
 if ($p.ExitCode -ne 0) { throw "Recorder exited with $($p.ExitCode)" }

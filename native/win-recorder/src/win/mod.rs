@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::POINT;
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint};
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 use windows::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SetProcessDpiAwarenessContext};
 use windows_capture::capture::{Context, GraphicsCaptureApiHandler};
 use windows_capture::encoder::{AudioSettingsBuilder, ContainerSettingsBuilder, VideoEncoder, VideoSettingsBuilder, VideoSettingsSubType};
@@ -107,6 +108,18 @@ pub fn record(args: &Args) -> Result<(), String> {
     };
     let geo = monitor_geometry(&monitor)?;
 
+    // Excluding the cursor needs Windows 10 2004+. Hiding the yellow capture border needs a newer
+    // build; where it is missing we record with the border rather than fail.
+    if !GraphicsCaptureApi::is_cursor_settings_supported().unwrap_or(false) {
+        return Err("This Windows version cannot record without the system cursor. Windows 10 version 2004 or newer is required.".into());
+    }
+    let border = if GraphicsCaptureApi::is_border_settings_supported().unwrap_or(false) {
+        DrawBorderSettings::WithoutBorder
+    } else {
+        emit("log", serde_json::json!({ "message": "Capture border cannot be hidden on this Windows version" }));
+        DrawBorderSettings::Default
+    };
+
     state::init(state::Shared {
         monitor: state::Monitor { left_px: geo.left, top_px: geo.top, scale: geo.scale },
         moves: Mutex::new(Vec::new()),
@@ -123,8 +136,10 @@ pub fn record(args: &Args) -> Result<(), String> {
     let (w, h) = (even(geo.width), even(geo.height));
     // About 0.1 bit per pixel per frame at 60 fps keeps text crisp (4K ~ 50 Mbit/s).
     let bitrate = ((w as f64 * h as f64 * 60.0 * 0.1) as u32).clamp(8_000_000, 80_000_000);
+    // H.264 (decodable everywhere) up to its 4096x2304 limit; HEVC for larger monitors.
+    let codec = if w > 4096 || h > 2304 { VideoSettingsSubType::HEVC } else { VideoSettingsSubType::H264 };
     let encoder = VideoEncoder::new(
-        VideoSettingsBuilder::new(w, h).sub_type(VideoSettingsSubType::H264).frame_rate(60).bitrate(bitrate),
+        VideoSettingsBuilder::new(w, h).sub_type(codec).frame_rate(60).bitrate(bitrate),
         AudioSettingsBuilder::default().disabled(true),
         ContainerSettingsBuilder::default(),
         out.join(VIDEO_FILE),
@@ -135,17 +150,6 @@ pub fn record(args: &Args) -> Result<(), String> {
     let input = input::start()?;
     let cursor = cursor::start();
 
-    // Excluding the cursor needs Windows 10 2004+. Hiding the yellow capture border needs a newer
-    // build; where it is missing we record with the border rather than fail.
-    if !GraphicsCaptureApi::is_cursor_settings_supported().unwrap_or(false) {
-        return Err("This Windows version cannot record without the system cursor. Windows 10 version 2004 or newer is required.".into());
-    }
-    let border = if GraphicsCaptureApi::is_border_settings_supported().unwrap_or(false) {
-        DrawBorderSettings::WithoutBorder
-    } else {
-        emit("log", serde_json::json!({ "message": "Capture border cannot be hidden on this Windows version" }));
-        DrawBorderSettings::Default
-    };
     let settings = Settings::new(
         monitor,
         CursorCaptureSettings::WithoutCursor,
@@ -170,6 +174,12 @@ pub fn record(args: &Args) -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(5));
     };
     let start_ms = clock::system_relative_to_ms(first_ticks);
+    // Where the pointer is when recording starts (in points), and its shape.
+    let initial_pos = {
+        let mut p = POINT::default();
+        unsafe { GetCursorPos(&mut p) }.ok().map(|_| state::get().to_points(p.x, p.y))
+    };
+    let initial_cursor = state::get().current_cursor();
     let unix_start = clock::unix_ms() - (clock::now_ms() - start_ms);
     emit("started", serde_json::json!({ "unixStartMs": unix_start }));
 
@@ -194,7 +204,21 @@ pub fn record(args: &Args) -> Result<(), String> {
     }
 
     let within = |t: f64| t >= start_ms && t <= end_ms;
-    let moves: Vec<_> = s.moves.lock().map_err(|e| e.to_string())?.iter().filter(|e| within(e.process_time_ms)).cloned().collect();
+    let mut moves: Vec<_> = s.moves.lock().map_err(|e| e.to_string())?.iter().filter(|e| within(e.process_time_ms)).cloned().collect();
+    // The editor draws the cursor from the first event on, so pin the pointer's position at the
+    // very start (otherwise it is invisible until the mouse first moves).
+    if let (Some((x, y)), true) = (initial_pos, moves.first().is_none_or(|m| m.process_time_ms > start_ms)) {
+        moves.insert(0, bundle::MouseRecord {
+            kind: "mouseMoved",
+            x,
+            y,
+            cursor_id: initial_cursor.clone(),
+            process_time_ms: start_ms,
+            unix_time_ms: unix_start,
+            active_modifiers: vec![],
+            button: None,
+        });
+    }
     let clicks: Vec<_> = s.clicks.lock().map_err(|e| e.to_string())?.iter().filter(|e| within(e.process_time_ms)).cloned().collect();
     let keys: Vec<_> = s.keys.lock().map_err(|e| e.to_string())?.iter().filter(|e| within(e.process_time_ms)).cloned().collect();
     let cursors = s.cursors.lock().map_err(|e| e.to_string())?.clone();

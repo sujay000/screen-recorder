@@ -3,12 +3,13 @@
 
 import { generateAutoZooms } from '../../core/camera/zoom';
 import type { Project, ProjectConfig, Zoom } from '../../core/project/model';
-import { Scene } from '../../core/scene/scene';
+import { Scene, cursorModelKey } from '../../core/scene/scene';
 import type { OpenedProject } from '../../shared/ipc';
 import type { Compositor } from '../gpu/compositor';
 import { CursorImages } from '../media/cursor-images';
 import { type DemuxedVideo, demuxVideo } from '../media/video-track';
 import { type ExportProgress, type ExportSettings, exportProject } from '../export/exporter';
+import { toast } from '../ui/overlay';
 import { debounce } from '../util';
 import { Player } from './player';
 
@@ -46,6 +47,10 @@ export class EditorController {
     const track = opened.project.recording.screenVideo[0];
     if (!track) throw new Error('This recording has no screen video.');
     const video = await demuxVideo(opened.mediaBase, track);
+    const support = await VideoDecoder.isConfigSupported(video.config).catch((e: Error) => ({ supported: false, reason: e.message }));
+    if (!support.supported) {
+      throw new Error(`This system cannot decode the screen video (codec ${video.config.codec}, ${video.width}x${video.height}). For HEVC, install "HEVC Video Extensions" from the Microsoft Store or use a GPU with HEVC decoding.`);
+    }
     const c = new EditorController(opened, video, compositor);
     await c.cursors.preload();
     return c;
@@ -55,8 +60,13 @@ export class EditorController {
     return this.scene.playbackDurationMs;
   }
 
+  private cursorKey = '';
+
   private buildScene(): Scene {
-    return new Scene(this.project, { hasCamera: false, hoverChangeTimes: this.opened.hoverChangeTimes });
+    const key = cursorModelKey(this.project, this.opened.hoverChangeTimes);
+    const reuse = this.scene && key === this.cursorKey ? this.scene.cursor : undefined;
+    this.cursorKey = key;
+    return new Scene(this.project, { hasCamera: false, hoverChangeTimes: this.opened.hoverChangeTimes, cursor: reuse });
   }
 
   // ---- Preview canvas ----
@@ -72,7 +82,8 @@ export class EditorController {
       this.playback = { timeMs: t, playing: player.isPlaying };
       this.playbackListeners.forEach((l) => l());
     };
-    await player.loadAudio();
+    const problems = await player.loadAudio();
+    for (const p of problems) toast('Audio track skipped', { tone: 'error', description: p });
     await player.seek(this.playback.timeMs);
   }
 

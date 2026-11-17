@@ -48,9 +48,30 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
   const [phase, setPhase] = useState<RecorderPhase>('idle');
   const [startedAt, setStartedAt] = useState(0);
   const captures = useRef<AudioCapture[]>([]);
+  // Callbacks change identity every render; keep the latest without re-subscribing.
+  const callbacks = useRef({ onRecorded, onError });
+  callbacks.current = { onRecorded, onError };
 
   useEffect(() => {
     if (supported) void window.recorder.listDisplays().then(setDisplays);
+  }, [supported]);
+
+  // The native recorder can fail mid-recording; stop the audio captures and report it.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  useEffect(() => {
+    if (!supported) return;
+    return window.recorder.onRecorderStatus((s) => {
+      if (s.state === 'idle' && s.message && phaseRef.current === 'recording') {
+        for (const c of captures.current) {
+          c.recorder.stop();
+          c.stream.getTracks().forEach((t) => t.stop());
+        }
+        captures.current = [];
+        setPhase('idle');
+        callbacks.current.onError(s.message);
+      }
+    });
   }, [supported]);
 
   const tryCapture = async (kind: AudioCapture['kind'], open: () => Promise<MediaStream>) => {
@@ -58,7 +79,7 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
       const stream = await open();
       if (stream.getAudioTracks().length) captures.current.push(await startCapture(kind, stream));
     } catch (err) {
-      onError(`${kind === 'microphone' ? 'Microphone' : 'System audio'} unavailable: ${(err as Error).message}`);
+      callbacks.current.onError(`${kind === 'microphone' ? 'Microphone' : 'System audio'} unavailable: ${(err as Error).message}`);
     }
   };
 
@@ -67,9 +88,10 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
     const status = await window.recorder.startRecording({ displayId, microphone, systemAudio });
     if (status.state !== 'recording') {
       setPhase('idle');
-      onError(status.message ?? 'Could not start recording');
+      callbacks.current.onError(status.message ?? 'Could not start recording');
       return;
     }
+    setStartedAt(Date.now());
     if (microphone) await tryCapture('microphone', () => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true } }));
     if (systemAudio) {
       // The main process answers this request with system loopback audio.
@@ -79,7 +101,6 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
         return new MediaStream(s.getAudioTracks());
       });
     }
-    setStartedAt(Date.now());
     setPhase('recording');
   }, [displayId, microphone, systemAudio]);
 
@@ -87,19 +108,25 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
     setPhase('stopping');
     const audio = await Promise.all(captures.current.map(async (c) => ({ c, r: await stopCapture(c) })));
     captures.current = [];
-    const bundle = await window.recorder.stopRecording();
+    const result = await window.recorder.stopRecording();
+    const bundle = result?.bundle ?? null;
     if (!bundle) {
       setPhase('idle');
-      onError('Recording failed');
+      callbacks.current.onError(`Recording failed: ${result?.error ?? 'no recording was in progress'}`);
       return;
     }
+    if (result?.error) callbacks.current.onError(`Recorder warning: ${result.error}`);
     for (const { c, r } of audio) {
       const name = c.kind === 'microphone' ? 'microphone-0.webm' : 'system-audio-0.webm';
-      await window.recorder.saveAudioTrack(bundle, name, r.data, { kind: c.kind, unixStartMs: c.unixStartMs, durationMs: r.durationMs });
+      try {
+        await window.recorder.saveAudioTrack(bundle, name, r.data, { kind: c.kind, unixStartMs: c.unixStartMs, durationMs: r.durationMs });
+      } catch (err) {
+        callbacks.current.onError(`Saving ${name} (${r.data.byteLength} bytes) failed: ${(err as Error).message}`);
+      }
     }
     setPhase('idle');
-    onRecorded(bundle);
-  }, [onRecorded]);
+    callbacks.current.onRecorded(bundle);
+  }, []);
 
   return { supported, displays, displayId, setDisplayId, microphone, setMicrophone, systemAudio, setSystemAudio, phase, startedAt, start, stop };
 }

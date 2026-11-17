@@ -9,8 +9,12 @@ import { Compositor } from './gpu/compositor';
 import { useRecorder } from './recording/use-recorder';
 import { Button, Row, Switch } from './ui/controls';
 import { ExportIcon, FolderIcon, LogoMark, RecordIcon, StopIcon } from './ui/icons';
-import { Toaster, toast } from './ui/overlay';
+import { Toaster, toast, toastError } from './ui/overlay';
 import { formatTime } from './util';
+
+// Anything that escapes a handler still reaches the screen with its stack.
+window.addEventListener('error', (e) => toastError('Unexpected error', e.error ?? e.message));
+window.addEventListener('unhandledrejection', (e) => toastError('Unexpected error', e.reason));
 
 let compositorPromise: Promise<Compositor> | null = null;
 const getCompositor = () => (compositorPromise ??= Compositor.create());
@@ -53,14 +57,18 @@ export function App() {
       const o = await window.recorder.openProjectDialog();
       if (o) await open(o);
     } catch (err) {
-      toast('Could not open recording', { tone: 'error', description: (err as Error).message });
+      toastError('Could not open recording', err);
     }
   };
 
   const recorder = useRecorder(
     async (bundle) => {
       toast('Recording saved', { tone: 'success' });
-      await open(await window.recorder.openProject(bundle));
+      try {
+        await open(await window.recorder.openProject(bundle));
+      } catch (err) {
+        toastError('Could not open the new recording', err);
+      }
     },
     (message) => toast(message, { tone: 'error' }),
   );

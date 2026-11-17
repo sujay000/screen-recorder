@@ -10,6 +10,7 @@ import { openProject, readReferenceHoverTimes, saveProject } from '../node/bundl
 import { addAudioTrack } from '../node/recording-writer';
 import type { Project } from '../core/project/model';
 import { IPC, type AudioTrackInfo, type DisplayInfo, type OpenedProject, type RecorderStatus } from '../shared/ipc';
+import { appendTo, log, mainLogPath } from './log';
 import { NativeRecorder, helperPath } from './native-recorder';
 
 // Software WebGPU for machines without a GPU (CI, VMs). Opt-in, because it is slow.
@@ -24,6 +25,7 @@ const recorder = new NativeRecorder();
 let recordingBundle: string | null = null;
 let lastRecordedBundle: string | null = null;
 const exportFiles = new Map<number, number>(); // handle -> fd
+const exportPaths = new Map<number, string>();
 let nextHandle = 1;
 
 function projectsRoot(): string {
@@ -95,23 +97,31 @@ function registerIpc(): void {
     const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
     const bundle = path.join(projectsRoot(), `Recording ${stamp}.recording`);
     recordingBundle = bundle;
+    // Keep our own window out of the recording from its first frame (Windows: WDA_EXCLUDEFROMCAPTURE).
+    window?.setContentProtection(true);
     try {
       const displays = screen.getAllDisplays();
       const d = displays[Number(o.displayId)] ?? screen.getPrimaryDisplay();
       const centre = { x: d.bounds.x + d.bounds.width / 2, y: d.bounds.y + d.bounds.height / 2 };
       // Electron bounds are DIPs; the recorder works in physical pixels.
       const at = process.platform === 'win32' ? screen.dipToScreenPoint(centre) : centre;
+      const recLog = path.join(bundle, 'recording', 'recorder.log');
+      log('info', `Recording display ${o.displayId} at physical point ${Math.round(at.x)},${Math.round(at.y)} into ${bundle}`);
       await recorder.start(exe, bundle, at, (ev) => {
-        if (ev.event === 'error') sendStatus({ state: 'idle', message: ev.message });
+        appendTo(recLog, `${ev.event}${ev.message ? `: ${ev.message}` : ''}`);
+        if (ev.event === 'error') {
+          log('error', `Recorder: ${ev.message}`);
+          sendStatus({ state: 'idle', message: `Recorder error: ${ev.message} (log: ${recLog})` });
+        }
       });
-      // Keep our own window out of the recording (Windows: WDA_EXCLUDEFROMCAPTURE).
-      window?.setContentProtection(true);
       const s: RecorderStatus = { state: 'recording', bundlePath: bundle };
       sendStatus(s);
       return s;
     } catch (err) {
       recordingBundle = null;
-      return { state: 'idle', message: (err as Error).message };
+      window?.setContentProtection(false);
+      log('error', `Recording did not start: ${(err as Error).message}`);
+      return { state: 'idle', message: `Recording did not start: ${(err as Error).message}` };
     }
   });
 
@@ -123,9 +133,15 @@ function registerIpc(): void {
     const bundle = recordingBundle;
     recordingBundle = null;
     lastRecordedBundle = bundle;
-    sendStatus({ state: 'idle', message: ev.event === 'error' ? ev.message : undefined });
-    if (!fs.existsSync(path.join(bundle, 'recording', 'metadata.json'))) return null;
-    return bundle;
+    sendStatus({ state: 'idle' });
+    const recLog = path.join(bundle, 'recording', 'recorder.log');
+    if (!fs.existsSync(path.join(bundle, 'recording', 'metadata.json'))) {
+      const message = `${ev.event === 'error' ? ev.message : 'The recorder stopped without writing metadata.json'}. Recorder log: ${recLog}`;
+      log('error', `Recording failed: ${message}`);
+      return { bundle: null, error: message };
+    }
+    if (ev.event === 'error') log('warn', `Recorder reported an error but wrote the bundle: ${ev.message}`);
+    return { bundle, error: ev.event === 'error' ? ev.message : undefined };
   });
 
   ipcMain.handle(IPC.saveAudioTrack, (_e, bundle: string, fileName: string, data: ArrayBuffer, info: AudioTrackInfo) => {
@@ -144,6 +160,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.exportOpen, (_e, p: string) => {
     const h = nextHandle++;
     exportFiles.set(h, fs.openSync(p, 'w'));
+    exportPaths.set(h, p);
     return h;
   });
   ipcMain.handle(IPC.exportWrite, (_e, h: number, pos: number, data: ArrayBuffer) => {
@@ -151,10 +168,14 @@ function registerIpc(): void {
     if (fd === undefined) throw new Error('Export file is not open');
     fs.writeSync(fd, Buffer.from(data), 0, data.byteLength, pos);
   });
-  ipcMain.handle(IPC.exportClose, (_e, h: number) => {
+  ipcMain.handle(IPC.exportClose, (_e, h: number, discard?: boolean) => {
     const fd = exportFiles.get(h);
     if (fd !== undefined) fs.closeSync(fd);
+    const p = exportPaths.get(h);
     exportFiles.delete(h);
+    exportPaths.delete(h);
+    // A cancelled or failed export would leave an unplayable file behind.
+    if (discard && p) fs.rmSync(p, { force: true });
   });
   ipcMain.handle(IPC.revealFile, (_e, p: string) => shell.showItemInFolder(p));
 }
@@ -181,7 +202,11 @@ function runSelfTestIfRequested(): void {
   window.webContents.once('did-finish-load', () => window?.webContents.send(IPC.selfTest, raw));
 }
 
+process.on('uncaughtException', (err) => log('error', `Uncaught in main: ${err.stack ?? err.message}`));
+process.on('unhandledRejection', (err) => log('error', `Unhandled rejection in main: ${(err as Error)?.stack ?? String(err)}`));
+
 app.whenReady().then(() => {
+  log('info', `Recorder ${app.getVersion()} on ${process.platform} ${process.arch}, Electron ${process.versions.electron}; log ${mainLogPath()}`);
   registerMediaProtocol();
   registerIpc();
   registerDisplayMediaHandler();

@@ -21,6 +21,14 @@ const BG_ZOOM_GROWTH = 0.125;
 export interface SceneOptions {
   hasCamera: boolean;
   hoverChangeTimes?: number[];
+  // Reuse a cursor model built for the same cursor settings (planning the path is the slow part,
+  // and zoom or style edits do not change it).
+  cursor?: CursorModel;
+}
+
+// Everything the cursor model depends on; equal keys mean the model can be reused.
+export function cursorModelKey(project: Project, hoverChangeTimes: number[] = []): string {
+  return JSON.stringify([project.config.cursor, project.config.animations.mouseMovementSpring, project.slices, hoverChangeTimes.length]);
 }
 
 export class Scene {
@@ -45,7 +53,7 @@ export class Scene {
           ? { sizeRatio01: cfg.camera.sizeRatio01, paddingRatio01: 0.5, aspectRatio: cfg.camera.aspectRatio, position01: cfg.camera.position01, zoomedScale: 0.8 }
           : null,
     });
-    this.cursor = new CursorModel(project, opts.hoverChangeTimes ?? []);
+    this.cursor = opts.cursor ?? new CursorModel(project, opts.hoverChangeTimes ?? []);
     this.decimated = decimate(this.cursor.events, 10);
     const restSamples = this.decimated.map((e) => ({ t: e.recordingTimeMs, x: e.x, y: e.y }));
     const rd = this.layout.getVisibleSourcePart(1);
