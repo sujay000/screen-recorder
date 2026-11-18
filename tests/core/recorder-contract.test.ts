@@ -27,7 +27,7 @@ describe.skipIf(!fs.existsSync(dir))('Windows recorder bundle contract', () => {
       ['mouseMoved', 1600],
     ]);
     expect(rec.mouseclicks[0]).toMatchObject({ x: 400, y: 300, cursorId: 'arrow', button: 'left' });
-    expect(rec.keystrokes).toEqual([{ type: 'keyDown', character: undefined, recordingTimeMs: 1000 }]);
+    expect(rec.keystrokes).toEqual([{ type: 'keyDown', character: undefined, keyCode: 72, isARepeat: false, activeModifiers: [], recordingTimeMs: 1000 }]);
     expect(rec.cursors[0]).toMatchObject({ id: 'arrow', hotSpot: { x: 0, y: 0 }, standardSize: { width: 32, height: 32 } });
   });
 
