@@ -216,7 +216,15 @@ function registerDisplayMediaHandler(): void {
 function runSelfTestIfRequested(): void {
   const raw = process.env.RECORDER_SELFTEST;
   if (!raw || !window) return;
-  const job = JSON.parse(raw) as { bundle: string; out: string; screenshot?: string };
+  let job: { bundle: string; out: string; screenshot?: string };
+  try {
+    job = JSON.parse(raw) as typeof job;
+  } catch (err) {
+    // Quit instead of waiting for a self-test that can never start.
+    log('error', `RECORDER_SELFTEST is not valid JSON (${(err as Error).message}): ${raw}`);
+    app.exit(2);
+    return;
+  }
   ipcMain.handle(IPC.selfTestResult, async (_e, result: unknown) => {
     if (job.screenshot && window) fs.writeFileSync(job.screenshot, (await window.webContents.capturePage()).toPNG());
     fs.writeFileSync(job.out + '.json', JSON.stringify(result, null, 2));
