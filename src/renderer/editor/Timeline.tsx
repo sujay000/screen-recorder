@@ -1,10 +1,12 @@
-// Timeline: transport, ruler with scrubbing, the clip lane and the zoom lane. Zoom blocks can be
-// selected, moved and resized from either edge. Zoom times are source times; with one untrimmed
-// clip they equal playback times.
+// Timeline: transport, ruler with scrubbing, the clip lane and the zoom lane. The axis is
+// playback time (after cuts and speed changes). Clips can be split (S), trimmed from either edge,
+// deleted and sped up; zoom blocks can be moved and resized. Zooms are stored in source
+// (recording) time and drawn through the clip time map.
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { makeZoom } from '../../core/camera/zoom';
 import type { Zoom } from '../../core/project/model';
+import { MIN_CLIP_MS } from './editor-controller';
 import { Button, Kbd } from '../ui/controls';
 import { PauseIcon, PlayIcon, PlusIcon, ZoomIcon } from '../ui/icons';
 import { formatTime } from '../util';
@@ -27,7 +29,12 @@ export function Timeline({ editor, selectedId, onSelect }: { editor: EditorContr
   const lanes = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   const duration = editor.durationMs;
+  const sourceDuration = editor.project.recording.durationMs;
   const zooms = editor.project.zooms;
+  const map = editor.scene.cursor.timeMap;
+  const selectedClip = selectedId?.startsWith('clip:') ? Number(selectedId.slice(5)) : null;
+  // Source time on the playback axis.
+  const sx = (sourceMs: number) => x(map.sourceToPlayback(sourceMs));
 
   useEffect(() => {
     const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
@@ -49,7 +56,7 @@ export function Timeline({ editor, selectedId, onSelect }: { editor: EditorContr
   }, [duration, width]);
 
   const scrub = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('.zoom-block')) return;
+    if ((e.target as HTMLElement).closest('.zoom-block, .clip')) return;
     onSelect(null);
     editor.seek(msAt(e.clientX));
     const move = (ev: PointerEvent) => editor.seek(msAt(ev.clientX));
@@ -62,10 +69,10 @@ export function Timeline({ editor, selectedId, onSelect }: { editor: EditorContr
   };
 
   const addZoom = () => {
-    const t = playback.timeMs;
+    const t = map.playbackToSource(playback.timeMs);
     if (zooms.some((z) => t >= z.sourceStartMs && t <= z.sourceEndMs)) return;
     const next = zooms.filter((z) => z.sourceStartMs > t).sort((a, b) => a.sourceStartMs - b.sourceStartMs)[0];
-    const end = Math.min(t + NEW_ZOOM_MS, next ? next.sourceStartMs - 1 : duration);
+    const end = Math.min(t + NEW_ZOOM_MS, next ? next.sourceStartMs - 1 : sourceDuration);
     if (end - t < MIN_ZOOM_MS) return;
     const z = makeZoom(Math.round(t), Math.round(end));
     editor.setZooms([...zooms, z].sort((a, b) => a.sourceStartMs - b.sourceStartMs));
@@ -78,16 +85,18 @@ export function Timeline({ editor, selectedId, onSelect }: { editor: EditorContr
     const startX = e.clientX;
     const others = zooms.filter((o) => o.id !== z0.id);
     const lo = Math.max(0, ...others.filter((o) => o.sourceEndMs <= z0.sourceStartMs).map((o) => o.sourceEndMs + 1));
-    const hi = Math.min(duration, ...others.filter((o) => o.sourceStartMs >= z0.sourceEndMs).map((o) => o.sourceStartMs - 1));
+    const hi = Math.min(sourceDuration, ...others.filter((o) => o.sourceStartMs >= z0.sourceEndMs).map((o) => o.sourceStartMs - 1));
     const len = z0.sourceEndMs - z0.sourceStartMs;
+    // The pointer moves along playback time; map the moved edge back to source time.
+    const shifted = (sourceMs: number, d: number) => map.playbackToSource(map.sourceToPlayback(sourceMs) + d);
     const apply = (ev: PointerEvent, final: boolean) => {
       const d = ((ev.clientX - startX) / width) * duration;
       let s = z0.sourceStartMs;
       let en = z0.sourceEndMs;
-      if (mode === 'left') s = Math.min(en - MIN_ZOOM_MS, Math.max(lo, s + d));
-      else if (mode === 'right') en = Math.max(s + MIN_ZOOM_MS, Math.min(hi, en + d));
+      if (mode === 'left') s = Math.min(en - MIN_ZOOM_MS, Math.max(lo, shifted(s, d)));
+      else if (mode === 'right') en = Math.max(s + MIN_ZOOM_MS, Math.min(hi, shifted(en, d)));
       else {
-        s = Math.min(hi - len, Math.max(lo, s + d));
+        s = Math.min(hi - len, Math.max(lo, shifted(s, d)));
         en = s + len;
       }
       editor.setZooms(
@@ -105,15 +114,51 @@ export function Timeline({ editor, selectedId, onSelect }: { editor: EditorContr
     window.addEventListener('pointerup', up);
   };
 
+  // Trim a clip from one edge (source time moves by the pointer delta times the clip speed), or
+  // just select it.
+  const clipDrag = (e: React.PointerEvent, index: number, mode: 'left' | 'right' | 'select') => {
+    e.stopPropagation();
+    onSelect(`clip:${index}`);
+    if (mode === 'select') {
+      editor.seek(msAt(e.clientX));
+      return;
+    }
+    const slices = editor.project.slices;
+    const s0 = slices[index];
+    const lo = index > 0 ? slices[index - 1].sourceEndMs : 0;
+    const hi = index < slices.length - 1 ? slices[index + 1].sourceStartMs : sourceDuration;
+    const startX = e.clientX;
+    const apply = (ev: PointerEvent, final: boolean) => {
+      const d = ((ev.clientX - startX) / width) * duration * s0.timeScale;
+      const patch =
+        mode === 'left'
+          ? { sourceStartMs: Math.round(Math.min(s0.sourceEndMs - MIN_CLIP_MS, Math.max(lo, s0.sourceStartMs + d))) }
+          : { sourceEndMs: Math.round(Math.max(s0.sourceStartMs + MIN_CLIP_MS, Math.min(hi, s0.sourceEndMs + d))) };
+      editor.updateSlice(index, patch, final);
+    };
+    const move = (ev: PointerEvent) => apply(ev, false);
+    const up = (ev: PointerEvent) => {
+      apply(ev, true);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input, textarea, [role="slider"]')) return;
       if (e.code === 'Space') {
         e.preventDefault();
         editor.togglePlay();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedClip !== null) {
+        if (editor.deleteSlice(selectedClip)) onSelect(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         editor.deleteZoom(selectedId);
         onSelect(null);
+      } else if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) {
+        editor.splitAt(playback.timeMs);
       } else if (e.key.toLowerCase() === 'z' && !e.metaKey && !e.ctrlKey) {
         addZoom();
       } else if (e.key === 'Escape') {
@@ -138,7 +183,7 @@ export function Timeline({ editor, selectedId, onSelect }: { editor: EditorContr
         </div>
         <div className="spacer" />
         <span className="hint">
-          <Kbd>Space</Kbd> play <Kbd>Z</Kbd> add zoom <Kbd>⌫</Kbd> delete
+          <Kbd>Space</Kbd> play <Kbd>S</Kbd> split <Kbd>Z</Kbd> add zoom <Kbd>⌫</Kbd> delete
         </span>
         <Button size="sm" icon={<PlusIcon />} onClick={addZoom}>
           Zoom
@@ -153,18 +198,27 @@ export function Timeline({ editor, selectedId, onSelect }: { editor: EditorContr
           ))}
         </div>
         <div className="lane lane-clip">
-          <div className="clip" style={{ width: x(duration) }}>
-            <span>Recording</span>
-            <span className="muted">{formatTime(duration, 1)}</span>
-          </div>
+          {map.links.map((l) => (
+            <div
+              key={`${l.index}-${l.sourceStartMs}`}
+              className={`clip ${selectedClip === l.index ? 'selected' : ''}`}
+              style={{ left: x(l.playbackStartMs), width: Math.max(6, x(l.playbackEndMs) - x(l.playbackStartMs) - 2) }}
+              onPointerDown={(e) => clipDrag(e, l.index, 'select')}
+            >
+              <div className="handle left" onPointerDown={(e) => clipDrag(e, l.index, 'left')} />
+              <span>{l.slice.timeScale !== 1 ? `${l.slice.timeScale}× speed` : map.links.length > 1 ? `Clip ${l.index + 1}` : 'Recording'}</span>
+              <span className="muted">{formatTime(l.playbackEndMs - l.playbackStartMs, 1)}</span>
+              <div className="handle right" onPointerDown={(e) => clipDrag(e, l.index, 'right')} />
+            </div>
+          ))}
         </div>
         <div className="lane lane-zoom">
           {zooms.length === 0 && <span className="lane-empty">No zooms — press Z to add one</span>}
-          {zooms.map((z) => (
+          {zooms.filter((z) => sx(z.sourceEndMs) - sx(z.sourceStartMs) > 0.5).map((z) => (
             <div
               key={z.id}
               className={`zoom-block ${z.presentation === 'loupe' ? 'loupe' : z.type === 'manual' ? 'manual' : ''} ${z.isDisabled ? 'disabled' : ''} ${z.id === selectedId ? 'selected' : ''}`}
-              style={{ left: x(z.sourceStartMs), width: Math.max(8, x(z.sourceEndMs) - x(z.sourceStartMs)) }}
+              style={{ left: sx(z.sourceStartMs), width: Math.max(8, sx(z.sourceEndMs) - sx(z.sourceStartMs)) }}
               onPointerDown={(e) => drag(e, z, 'move')}
             >
               <div className="handle left" onPointerDown={(e) => drag(e, z, 'left')} />

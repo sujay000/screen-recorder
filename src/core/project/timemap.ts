@@ -48,6 +48,16 @@ export class TimeMap {
     return l ? l.playbackToSource(Math.min(t, l.playbackEndMs)) : t;
   }
 
+  // Playback time of a source time. A source time cut out of the edit maps to where the edit
+  // continues (the start of the next kept part), so zooms over a cut still line up.
+  sourceToPlayback(t: number): number {
+    for (const l of this.links) {
+      if (t < l.sourceStartMs) return l.playbackStartMs;
+      if (t <= l.sourceEndMs) return l.sourceToPlayback(t);
+    }
+    return this.playbackDurationMs;
+  }
+
   sliceAtSource(t: number): Slice | null {
     for (const l of this.links) if (t >= l.sourceStartMs && t <= l.sourceEndMs) return l.slice;
     return null;

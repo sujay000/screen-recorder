@@ -2,7 +2,7 @@
 // the preview player and saving. React views call into it and subscribe to changes.
 
 import { generateAutoZooms } from '../../core/camera/zoom';
-import type { Project, ProjectConfig, Zoom } from '../../core/project/model';
+import type { Project, ProjectConfig, Slice, Zoom } from '../../core/project/model';
 import { Scene, cursorModelKey } from '../../core/scene/scene';
 import type { OpenedProject } from '../../shared/ipc';
 import type { Compositor } from '../gpu/compositor';
@@ -13,6 +13,8 @@ import { toast } from '../ui/overlay';
 import { analyseHovers } from '../media/hover-analysis';
 import { debounce } from '../util';
 import { Player } from './player';
+
+export const MIN_CLIP_MS = 200; // shortest clip a split or trim may leave
 
 export interface PlaybackState {
   timeMs: number;
@@ -170,6 +172,41 @@ export class EditorController {
 
   deleteZoom(id: string): void {
     this.setZooms(this.project.zooms.filter((z) => z.id !== id));
+  }
+
+  // ---- Clips (slices): trim, cut, speed ----
+
+  setSlices(slices: Slice[], final = true): void {
+    this.project.slices = slices.map((s) => ({ ...s }));
+    this.changed(final);
+    if (this.playback.timeMs > this.durationMs) this.seek(this.durationMs);
+  }
+
+  // Splits the clip under the playhead in two. Returns false if the playhead is too close to a
+  // clip edge.
+  splitAt(playbackMs: number): boolean {
+    const link = this.scene.cursor.timeMap.linkAtPlayback(playbackMs);
+    if (!link) return false;
+    const cut = link.playbackToSource(playbackMs);
+    if (cut - link.sourceStartMs < MIN_CLIP_MS || link.sourceEndMs - cut < MIN_CLIP_MS) return false;
+    const s = this.project.slices;
+    const i = link.index;
+    this.setSlices([...s.slice(0, i), { ...s[i], sourceEndMs: cut }, { ...s[i], sourceStartMs: cut }, ...s.slice(i + 1)]);
+    return true;
+  }
+
+  // Removes a clip from the edit (its part of the recording is cut). The last clip stays.
+  deleteSlice(index: number): boolean {
+    if (this.project.slices.length <= 1) return false;
+    this.setSlices(this.project.slices.filter((_, i) => i !== index));
+    return true;
+  }
+
+  updateSlice(index: number, patch: Partial<Slice>, final = true): void {
+    this.setSlices(
+      this.project.slices.map((s, i) => (i === index ? { ...s, ...patch } : s)),
+      final,
+    );
   }
 
   restoreAutoZooms(): void {

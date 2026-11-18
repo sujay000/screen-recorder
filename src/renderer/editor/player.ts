@@ -6,7 +6,7 @@ import type { Compositor } from '../gpu/compositor';
 import type { CursorImages } from '../media/cursor-images';
 import type { DemuxedVideo } from '../media/video-track';
 import { FrameSources } from '../media/frame-sources';
-import { type AudioClip, loadAudioClips } from '../media/audio';
+import { type AudioClip, clipSegments, loadAudioClips, scheduleSegments } from '../media/audio';
 import { FrameRenderer } from '../render/frame-renderer';
 
 const PREVIEW_FPS = 60;
@@ -131,19 +131,8 @@ export class Player {
     this.startWall = this.clock();
     if (!this.audio || this.clips.length === 0) return;
     void this.audio.resume();
-    const now = this.audio.currentTime;
-    for (const c of this.clips) {
-      const offset = (this.timeMs - c.startMs) / 1000;
-      if (offset >= c.buffer.duration) continue;
-      const src = this.audio.createBufferSource();
-      src.buffer = c.buffer;
-      const g = this.audio.createGain();
-      g.gain.value = c.gain;
-      src.connect(g).connect(this.audio.destination);
-      if (offset >= 0) src.start(now, offset);
-      else src.start(now - offset);
-      this.sources.push(src);
-    }
+    const segments = clipSegments(this.clips, this.scene.cursor.timeMap);
+    this.sources.push(...scheduleSegments(this.audio, segments, this.timeMs / 1000, this.audio.currentTime));
     this.startWall = this.audio.currentTime * 1000;
   }
 

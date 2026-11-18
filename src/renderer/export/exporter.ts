@@ -105,7 +105,7 @@ export async function exportProject(
         error: (e) => (encodeError = new Error(`Audio encoder (${aConfig!.codec}): ${e instanceof Error ? e.message : String(e)}`)),
       });
       aEncoder.configure(aConfig!);
-      await encodeMix(audio.clips, durationMs, aEncoder);
+      await encodeMix(audio.clips, scene.cursor.timeMap, durationMs, aEncoder);
       await aEncoder.flush();
       aEncoder.close();
     }

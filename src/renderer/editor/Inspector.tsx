@@ -61,7 +61,7 @@ function presetOf<T extends { spring: SpringConfig | null }>(list: T[], s: Sprin
 
 type Tab = 'background' | 'cursor' | 'motion' | 'audio';
 
-export function Inspector({ editor, selectedZoom, onDeselect }: { editor: EditorController; selectedZoom: Zoom | null; onDeselect: () => void }) {
+export function Inspector({ editor, selectedZoom, selectedClip, onDeselect }: { editor: EditorController; selectedZoom: Zoom | null; selectedClip: number | null; onDeselect: () => void }) {
   const [tab, setTab] = useState<Tab>('background');
   const c = editor.project.config;
   const edit = editor.updateConfig.bind(editor);
@@ -70,6 +70,8 @@ export function Inspector({ editor, selectedZoom, onDeselect }: { editor: Editor
     <aside className="inspector">
       {selectedZoom ? (
         <ZoomPanel editor={editor} zoom={selectedZoom} onDone={onDeselect} />
+      ) : selectedClip !== null ? (
+        <ClipPanel editor={editor} index={selectedClip} onDone={onDeselect} />
       ) : (
         <>
           <Segmented
@@ -431,5 +433,47 @@ function CameraSection({ editor }: { editor: EditorController }) {
         </>
       )}
     </>
+  );
+}
+
+const SPEEDS = [0.5, 1, 1.5, 2, 4];
+
+function ClipPanel({ editor, index, onDone }: { editor: EditorController; index: number; onDone: () => void }) {
+  const slice = editor.project.slices[index];
+  const count = editor.project.slices.length;
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <MotionIcon size={18} />
+        <h3>{count > 1 ? `Clip ${index + 1}` : 'Recording'}</h3>
+        <Button size="sm" variant="ghost" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+      <Row label="Speed">
+        <Segmented label="Clip speed" value={SPEEDS.includes(slice.timeScale) ? slice.timeScale : 1} options={SPEEDS.map((v) => ({ value: v, label: `${v}×` }))} onChange={(v) => editor.updateSlice(index, { timeScale: v })} />
+      </Row>
+      <Row label="Hide cursor">
+        <Switch label="Hide cursor" checked={slice.hideCursor} onChange={(v) => editor.updateSlice(index, { hideCursor: v })} />
+      </Row>
+      <Row label="Smooth cursor" hint="Off shows the raw cursor path">
+        <Switch label="Smooth cursor" checked={!slice.disableSmoothMouseMovement} onChange={(v) => editor.updateSlice(index, { disableSmoothMouseMovement: !v })} />
+      </Row>
+      <p className="muted">
+        Press <kbd className="kbd">S</kbd> to split at the playhead. Drag a clip's edges to trim it.
+      </p>
+      <div className="panel-footer">
+        <Button
+          variant="danger"
+          icon={<TrashIcon />}
+          disabled={count <= 1}
+          onClick={() => {
+            if (editor.deleteSlice(index)) onDone();
+          }}
+        >
+          Cut this clip
+        </Button>
+      </div>
+    </div>
   );
 }

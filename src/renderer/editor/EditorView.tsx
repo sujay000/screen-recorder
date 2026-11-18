@@ -51,11 +51,13 @@ export function EditorView({ editor }: { editor: EditorController }) {
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = editor.project.zooms.find((z) => z.id === selectedId) ?? null;
+  const clipIndex = selectedId?.startsWith('clip:') ? Number(selectedId.slice(5)) : null;
+  const selectedClip = clipIndex !== null && clipIndex < editor.project.slices.length ? clipIndex : null;
 
   return (
     <div className="editor">
       <Preview editor={editor} selectedManualZoom={selected?.type === 'manual' ? selected.id : null} />
-      <Inspector editor={editor} selectedZoom={selected} onDeselect={() => setSelectedId(null)} />
+      <Inspector editor={editor} selectedZoom={selected} selectedClip={selectedClip} onDeselect={() => setSelectedId(null)} />
       <Timeline editor={editor} selectedId={selectedId} onSelect={setSelectedId} />
     </div>
   );

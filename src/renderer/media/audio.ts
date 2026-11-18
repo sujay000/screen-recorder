@@ -2,12 +2,13 @@
 // timeline and encodes AAC for export.
 
 import type { MediaTrack, Project } from '../../core/project/model';
+import type { TimeMap } from '../../core/project/timemap';
 
 export const SAMPLE_RATE = 48000;
 
 export interface AudioClip {
   buffer: AudioBuffer;
-  startMs: number; // playback time of the first sample
+  startMs: number; // recording (source) time of the first sample
   gain: number;
 }
 
@@ -40,27 +41,67 @@ export async function loadAudioClips(mediaBase: string, project: Project, ctx: B
   return { clips, problems };
 }
 
+// One piece of a clip to play: the part of the clip inside one slice, placed on the playback
+// timeline. Slices can cut, reorder and speed up the recording (speed changes pitch, like a
+// tape played faster).
+export interface ClipSegment {
+  clip: AudioClip;
+  whenS: number; // playback time where it starts
+  offsetS: number; // position in the clip buffer
+  durationS: number; // length in buffer time
+  rate: number;
+}
+
+export function clipSegments(clips: AudioClip[], timeMap: TimeMap): ClipSegment[] {
+  const out: ClipSegment[] = [];
+  for (const link of timeMap.links) {
+    for (const clip of clips) {
+      const a = Math.max(link.sourceStartMs, clip.startMs);
+      const b = Math.min(link.sourceEndMs, clip.startMs + clip.buffer.duration * 1000);
+      if (b <= a) continue;
+      out.push({ clip, whenS: link.sourceToPlayback(a) / 1000, offsetS: (a - clip.startMs) / 1000, durationS: (b - a) / 1000, rate: link.slice.timeScale });
+    }
+  }
+  return out;
+}
+
+// Starts the segments on ctx, as if playback were at `fromS` when ctx.currentTime == `nowS`.
+export function scheduleSegments(ctx: BaseAudioContext, segments: ClipSegment[], fromS: number, nowS: number, limitS = Infinity): AudioBufferSourceNode[] {
+  const nodes: AudioBufferSourceNode[] = [];
+  for (const seg of segments) {
+    let when = seg.whenS - fromS;
+    let offset = seg.offsetS;
+    let duration = seg.durationS;
+    if (when < 0) {
+      offset -= when * seg.rate;
+      duration += when * seg.rate;
+      when = 0;
+    }
+    if (duration <= 0 || when >= limitS) continue;
+    const src = ctx.createBufferSource();
+    src.buffer = seg.clip.buffer;
+    src.playbackRate.value = seg.rate;
+    const g = ctx.createGain();
+    g.gain.value = seg.clip.gain;
+    src.connect(g).connect(ctx.destination);
+    src.start(nowS + when, offset, duration);
+    nodes.push(src);
+  }
+  return nodes;
+}
+
 const MIX_CHUNK_S = 30;
 
 // Mixes the clips onto the playback timeline and feeds the encoder, 30 s at a time so memory
 // stays flat for long recordings.
-export async function encodeMix(clips: AudioClip[], durationMs: number, encoder: AudioEncoder): Promise<void> {
+export async function encodeMix(clips: AudioClip[], timeMap: TimeMap, durationMs: number, encoder: AudioEncoder): Promise<void> {
   const total = durationMs / 1000;
+  const segments = clipSegments(clips, timeMap);
   for (let start = 0; start < total; start += MIX_CHUNK_S) {
     const len = Math.min(MIX_CHUNK_S, total - start);
     const frames = Math.max(1, Math.ceil(len * SAMPLE_RATE));
     const ctx = new OfflineAudioContext(2, frames, SAMPLE_RATE);
-    for (const c of clips) {
-      const when = c.startMs / 1000 - start; // clip start relative to this chunk
-      if (when >= len || -when >= c.buffer.duration) continue;
-      const src = ctx.createBufferSource();
-      src.buffer = c.buffer;
-      const g = ctx.createGain();
-      g.gain.value = c.gain;
-      src.connect(g).connect(ctx.destination);
-      if (when >= 0) src.start(when);
-      else src.start(0, -when);
-    }
+    scheduleSegments(ctx, segments, start, 0, len);
     encodeAudioBuffer(await ctx.startRendering(), encoder, Math.round(start * SAMPLE_RATE));
   }
 }

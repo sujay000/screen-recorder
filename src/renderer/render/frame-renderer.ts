@@ -23,7 +23,10 @@ export class FrameRenderer {
   draw(target: GPUTexture, playbackMs: number): void {
     const sourceMs = this.scene.cursor.timeMap.playbackToSource(playbackMs);
     const now = this.timeline.styleAt(playbackMs);
-    const prev = this.timeline.previousFrameStyle(playbackMs);
+    // No motion blur across a cut: the previous frame shows a different part of the recording.
+    const map = this.scene.cursor.timeMap;
+    const acrossCut = map.linkAtPlayback(playbackMs) !== map.linkAtPlayback(playbackMs - 1000 / this.quality.fps);
+    const prev = acrossCut ? now : this.timeline.previousFrameStyle(playbackMs);
     const cursor = this.cursors.get(this.scene.cursor.cursorIdAt(sourceMs));
     if (cursor) this.compositor.setCursorImage(cursor.id, cursor.bitmap);
     const display = this.scene.project.recording.displayBounds;
