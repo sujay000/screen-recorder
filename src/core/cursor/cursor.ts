@@ -9,7 +9,7 @@ import type { Vec2 } from '../geometry/rect';
 import type { MouseEvent, Project } from '../project/model';
 import { TimeMap } from '../project/timemap';
 import { type PathPoint, PLANNER, type PlannedPath, planCursorPath, type SyncPoint } from './planner';
-import { type Keyframe, interpKeyframes, tiltKeyframes } from './rotation';
+import { type Keyframe, followKeyframes, interpKeyframes, tiltKeyframes } from './rotation';
 import { isUserTyping, optimizeTypes } from './rules';
 
 const CHUNK_MS = 10000;
@@ -152,8 +152,23 @@ export class CursorModel {
     const drawn = [startEvents[0], ...inSlice.map(({ e, t }) => ({ ...e, recordingTimeMs: path.getTargetTimeOf(t) }))]
       .filter(Boolean)
       .sort((a, b) => a.recordingTimeMs - b.recordingTimeMs);
-    const ratio = this.project.config.cursor.rotationMode === 'none' ? 0 : this.project.config.cursor.rotateOnXMovementRatio;
-    return { playbackStartMs: start, path, drawnEvents: drawn, rotation: tiltKeyframes(drawn, ratio) };
+    return { playbackStartMs: start, path, drawnEvents: drawn, rotation: this.rotationKeyframes(drawn, plannedFrom) };
+  }
+
+  // Follow mode carries the bearing across chunks: a chunk starts from the whole-recording
+  // rotation at its planned start (reference: startRotationRad).
+  private wholeFollow: Keyframe[] | null = null;
+
+  private rotationKeyframes(drawn: MouseEvent[], plannedFromMs: number): Keyframe[] {
+    const c = this.project.config.cursor;
+    if (c.rotationMode === 'none') return [];
+    if (c.rotationMode === 'velocity') return tiltKeyframes(drawn, c.rotateOnXMovementRatio);
+    let start: number | undefined;
+    if (plannedFromMs > 0) {
+      this.wholeFollow ??= followKeyframes(this.events);
+      start = interpKeyframes(this.wholeFollow, this.timeMap.playbackToSource(plannedFromMs));
+    }
+    return followKeyframes(drawn, start);
   }
 
   // Smoothed cursor position (source points, crop-relative) at playback time t.

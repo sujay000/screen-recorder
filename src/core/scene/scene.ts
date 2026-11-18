@@ -13,7 +13,8 @@ import type { FrameStyle } from './frame-style';
 const INSTANT = resolveSpring(SPRING_PRESETS.instant);
 const FADE = resolveSpring(SPRING_PRESETS.medium);
 const TYPING_FADE = resolveSpring(SPRING_PRESETS.typingFade);
-const ROTATION = resolveSpring({ stiffness: 120, damping: 8, mass: 1 });
+const TILT_ROTATION = resolveSpring({ stiffness: 120, damping: 8, mass: 1 });
+const FOLLOW_ROTATION = resolveSpring({ stiffness: 320, damping: 28, mass: 1 });
 const PRESS_SCALE = 0.9;
 const FADE_BLUR_PX = 10;
 const BG_ZOOM_GROWTH = 0.125;
@@ -152,7 +153,7 @@ export class Scene {
         case 'csc':
           return cursorSpring;
         case 'crot':
-          return ROTATION;
+          return cfg.cursor.rotationMode === 'directional' ? FOLLOW_ROTATION : TILT_ROTATION;
         default:
           return screenSpring;
       }

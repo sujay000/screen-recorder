@@ -45,7 +45,8 @@ export interface FrameInputs {
     fadeBlur: number;
   };
   clicks: { x: number; y: number; age01: number }[];
-  clickStyle: 'none' | 'circle';
+  clickStyle: 'none' | 'circle' | 'ripple';
+  ripplePull01: number;
 }
 
 // Image facts the cursor size math needs.
@@ -64,6 +65,7 @@ export interface QualityOptions {
 const SHADOW_BLUR_SCALE = 8;
 const LIGHT_DISTANCE = 1.5;
 const CIRCLE_MS = 450;
+const RIPPLE_MS = 1000;
 
 export function srgbHexToLinear(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', '').padEnd(6, '0').slice(0, 6), 16);
@@ -158,13 +160,14 @@ export function buildFrameInputs(
   }
 
   const clickEffect = cfg.cursor.clickEffect;
-  const clicks =
-    clickEffect?.type === 'circle'
-      ? scene.cursor
-          .recentClicks(sourceTimeMs)
-          .map((c) => ({ x: now.screen.x + c.center01.x * now.screen.width, y: now.screen.y + c.center01.y * now.screen.height, age01: (sourceTimeMs - c.startedAtMs) / CIRCLE_MS }))
-          .filter((c) => c.age01 >= 0 && c.age01 < 1)
-      : [];
+  // Effects sit on the recorded click time and position, moving with the zoomed screen.
+  const effectMs = clickEffect?.type === 'circle' ? CIRCLE_MS : clickEffect?.type === 'ripple' ? RIPPLE_MS : 0;
+  const clicks = effectMs
+    ? scene.cursor
+        .recentClicks(sourceTimeMs)
+        .map((c) => ({ x: now.screen.x + c.center01.x * now.screen.width, y: now.screen.y + c.center01.y * now.screen.height, age01: (sourceTimeMs - c.startedAtMs) / effectMs }))
+        .filter((c) => c.age01 >= 0 && c.age01 < 1)
+    : [];
 
   const cursorMoved = cursor ? !nearlySame(cursor.now, cursor.before) || Math.abs(cursor.angleNow - cursor.angleBefore) > 0.001 : false;
   const taps = screenStatic && !cursorMoved ? 1 : Math.max(1, q.motionBlurTaps);
@@ -197,6 +200,7 @@ export function buildFrameInputs(
     },
     cursor,
     clicks,
-    clickStyle: clickEffect?.type === 'circle' ? 'circle' : 'none',
+    clickStyle: clickEffect?.type ?? 'none',
+    ripplePull01: clickEffect?.type === 'ripple' ? (clickEffect.pullSize01 ?? 0.04) : 0.04,
   };
 }

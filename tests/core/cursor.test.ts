@@ -48,3 +48,24 @@ describe.skipIf(projects.length === 0)('cursor planner on reference recordings',
     });
   }
 });
+
+import { followKeyframes } from '../../src/core/cursor/rotation';
+
+describe('follow rotation', () => {
+  const ev = (t: number, x: number, y: number) => ({ type: 'mouseMoved' as const, x, y, cursorId: 'arrow', recordingTimeMs: t });
+  it('turns toward the travel direction and stays within ±135°', () => {
+    const moves = Array.from({ length: 60 }, (_, i) => ev(i * 16, 100 + i * 8, 300));
+    const k = followKeyframes(moves);
+    const max = Math.max(...k.map((x) => Math.abs(x.rotationRad)));
+    expect(max).toBeLessThanOrEqual((135 * Math.PI) / 180 + 1e-9);
+    // Moving right, the bearing settles near heading 0 - neutral(-112.5°) = 112.5°.
+    const last = k[k.length - 1].rotationRad;
+    expect((last * 180) / Math.PI).toBeGreaterThan(60);
+  });
+  it('holds still for the first 500 ms (startup calm)', () => {
+    const moves = Array.from({ length: 60 }, (_, i) => ev(i * 16, 100 + i * 8, 300 + i * 3));
+    const k = followKeyframes(moves);
+    expect(k[0].rotationRad).toBe(k[1].rotationRad);
+    expect(k[1].recordingTimeMs - k[0].recordingTimeMs).toBe(500);
+  });
+});

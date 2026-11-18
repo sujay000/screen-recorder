@@ -139,7 +139,7 @@ export class Compositor {
       d.set([...c.pivotNow, ...c.pivotBefore], 80);
       d.set([c.angleNow, c.angleBefore, c.opacity, c.fadeBlur], 84);
     }
-    d.set([Math.min(3, f.clicks.length), f.clickStyle === 'circle' ? 1 : 0, f.screenNow.width, 0], 88);
+    d.set([Math.min(3, f.clicks.length), f.clickStyle === 'circle' ? 1 : f.clickStyle === 'ripple' ? 2 : 0, f.screenNow.width, f.ripplePull01], 88);
     f.clicks.slice(0, 3).forEach((k, i) => d.set([k.x, k.y, k.age01, 0], 92 + i * 4));
     this.device.queue.writeBuffer(this.params, 0, d);
   }

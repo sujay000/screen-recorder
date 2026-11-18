@@ -37,9 +37,9 @@ struct Params {
   cursorOpacity: f32,
   cursorFadeBlur: f32,       // stage units
   clickCount: f32,
-  clickStyle: f32,           // 0 none, 1 circle
+  clickStyle: f32,           // 0 none, 1 circle, 2 ripple
   videoWidthUnits: f32,      // screen rect width, for effect sizes
-  _pad0: f32,
+  ripplePull01: f32,         // ripple calm radius, fraction of the video width
   clicks: array<vec4f, 3>,   // x, y (stage units), age01, unused
 };
 
@@ -237,12 +237,45 @@ fn screenShadowMask(p: vec2f) -> f32 {
 
 // ---- Screen with motion blur ----------------------------------------------------------------
 
+// Ripple click effect (cursor.md §4.4): a ring travelling out from each click pulls the screen
+// image, with a small colour split. Returns (offset.xy, chroma.xy) in stage units.
+fn rippleWarp(p: vec2f) -> vec4f {
+  if (P.clickStyle < 1.5) { return vec4f(0.0); }
+  let w = P.videoWidthUnits;
+  var acc = vec4f(0.0);
+  for (var i = 0; i < 3; i++) {
+    if (f32(i) >= P.clickCount) { break; }
+    let c = P.clicks[i];
+    let tau = c.z;
+    let k = P.ripplePull01 * w;
+    let radius = k + tau * w * 0.2;
+    let bounce = exp(-3.0 * tau) * sin(9.4 * tau);
+    let band = 0.05 * w;
+    let d = p - c.xy;
+    let dist = length(d);
+    let r = (dist - radius) / band;
+    if (abs(r) > 3.0 || dist < 1e-4) { continue; }
+    let ring = exp(-4.0 * r * r);
+    let gate = select(1.0, smoothstep(0.35 * k, k, dist), k > 0.5 / P.pxPerUnit);
+    let dir = d / dist;
+    acc += vec4f(dir * bounce * ring * w * 0.015 * gate, dir * abs(bounce) * ring * (1.0 - ring) * 4.0 * w * 0.004 * gate);
+  }
+  return acc;
+}
+
 fn screenSample(p: vec2f, rect: vec4f) -> vec4f {
   let aa = aaUnits();
   let cov = smoothstep(aa, -aa, sdRoundRect(p, rect, P.screenRadius * rect.z / max(P.screenNow.z, 1e-4)));
   if (cov <= 0.0) { return vec4f(0.0); }
-  let uv = clamp((p - rect.xy) / rect.zw, vec2f(0.0), vec2f(1.0));
-  let c = textureSampleLevel(screenTex, linearSampler, uv, 0.0);
+  let warp = rippleWarp(p);
+  let q = p - warp.xy;
+  let uv = clamp((q - rect.xy) / rect.zw, vec2f(0.0), vec2f(1.0));
+  var c = textureSampleLevel(screenTex, linearSampler, uv, 0.0);
+  if (any(warp.zw != vec2f(0.0))) {
+    let off = warp.zw / rect.zw;
+    c.r = textureSampleLevel(screenTex, linearSampler, clamp(uv - off, vec2f(0.0), vec2f(1.0)), 0.0).r;
+    c.b = textureSampleLevel(screenTex, linearSampler, clamp(uv + off, vec2f(0.0), vec2f(1.0)), 0.0).b;
+  }
   return toBlurLinear(vec4f(c.rgb, 1.0)) * cov;
 }
 
@@ -306,7 +339,7 @@ fn cursorLayer(p: vec2f, frag: vec2f) -> vec4f {
 // ---- Click effect (circle, cursor.md §4.4) ---------------------------------------------------
 
 fn clickLayer(p: vec2f) -> vec4f {
-  if (P.clickStyle < 0.5) { return vec4f(0.0); }
+  if (P.clickStyle < 0.5 || P.clickStyle > 1.5) { return vec4f(0.0); }
   let w = P.videoWidthUnits;
   let aa = aaUnits();
   var out = vec4f(0.0);

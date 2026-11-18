@@ -105,7 +105,7 @@ export interface ProjectConfig {
   cursor: {
     hide: boolean;
     size: number;
-    rotationMode: 'velocity' | 'directional' | 'none';
+    rotationMode: 'velocity' | 'directional' | 'none'; // tilt / follow / off
     rotateOnXMovementRatio: number;
     baseRotation: number;
     hideNotMovingAfterMs: number | null;

@@ -169,11 +169,29 @@ export function Inspector({ editor, selectedZoom, onDeselect }: { editor: Editor
                     }}
                   />
                 </Row>
-                <Row label="Tilt" hint="Leans with movement">
-                  <Switch label="Tilt" checked={c.cursor.rotationMode !== 'none'} onChange={(v) => edit((cfg) => (cfg.cursor.rotationMode = v ? 'velocity' : 'none'))} />
+                <Row label="Rotation">
+                  <Segmented
+                    label="Cursor rotation"
+                    value={c.cursor.rotationMode}
+                    options={[
+                      { value: 'none', label: 'Off' },
+                      { value: 'velocity', label: 'Tilt' },
+                      { value: 'directional', label: 'Follow' },
+                    ]}
+                    onChange={(v) => edit((cfg) => (cfg.cursor.rotationMode = v))}
+                  />
                 </Row>
-                <Row label="Click highlight">
-                  <Switch label="Click highlight" checked={c.cursor.clickEffect?.type === 'circle'} onChange={(v) => edit((cfg) => (cfg.cursor.clickEffect = v ? { type: 'circle' } : null))} />
+                <Row label="Click effect">
+                  <Segmented
+                    label="Click effect"
+                    value={c.cursor.clickEffect?.type ?? 'none'}
+                    options={[
+                      { value: 'none', label: 'Off' },
+                      { value: 'circle', label: 'Circle' },
+                      { value: 'ripple', label: 'Ripple' },
+                    ]}
+                    onChange={(v) => edit((cfg) => (cfg.cursor.clickEffect = v === 'none' ? null : v === 'ripple' ? { type: 'ripple' } : { type: 'circle' }))}
+                  />
                 </Row>
                 <Row label="Hide when idle" hint="After 2 seconds">
                   <Switch label="Hide when idle" checked={c.cursor.hideNotMovingAfterMs !== null} onChange={(v) => edit((cfg) => (cfg.cursor.hideNotMovingAfterMs = v ? 2000 : null))} />
