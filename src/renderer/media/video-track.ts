@@ -60,7 +60,11 @@ function codecDescription(file: MP4File, trackId: number): Uint8Array | undefine
 }
 
 export async function demuxVideo(base: string, track: MediaTrack): Promise<DemuxedVideo> {
-  const bytes = await loadTrackBytes(base, track);
+  return demuxBytes(await loadTrackBytes(base, track), track.startOffsetMs);
+}
+
+// Demuxes an MP4 (plain or fragmented) held in memory; sample times start at startOffsetMs.
+export function demuxBytes(bytes: Uint8Array, startOffsetMs: number): Promise<DemuxedVideo> {
   return new Promise((resolve, reject) => {
     const file = createFile();
     let info: MP4VideoTrack | null = null;
@@ -91,7 +95,7 @@ export async function demuxVideo(base: string, track: MediaTrack): Promise<Demux
       width: v.video.width,
       height: v.video.height,
       samples: samples.map((s) => ({
-        timeMs: ((s.cts - first) / s.timescale) * 1000 + track.startOffsetMs,
+        timeMs: ((s.cts - first) / s.timescale) * 1000 + startOffsetMs,
         durationMs: (s.duration / s.timescale) * 1000,
         isKey: s.is_sync,
         data: s.data,

@@ -18,8 +18,8 @@ export interface RecorderStatus {
   bundlePath?: string;
 }
 
-export interface AudioTrackInfo {
-  kind: 'microphone' | 'systemAudio';
+export interface MediaTrackInfo {
+  kind: 'microphone' | 'systemAudio' | 'webcam';
   unixStartMs: number;
   durationMs: number;
 }
@@ -41,7 +41,7 @@ export interface RecorderApi {
   // Resolves once the native recorder has finished writing. bundle is null when nothing usable was
   // written; error carries the exact cause either way.
   stopRecording(): Promise<{ bundle: string | null; error?: string } | null>;
-  saveAudioTrack(bundlePath: string, fileName: string, data: ArrayBuffer, info: AudioTrackInfo): Promise<void>;
+  saveMediaTrack(bundlePath: string, fileName: string, data: ArrayBuffer, info: MediaTrackInfo): Promise<void>;
   chooseExportPath(defaultName: string): Promise<string | null>;
   exportOpen(filePath: string): Promise<number>; // returns a handle
   exportWrite(handle: number, position: number, data: ArrayBuffer): Promise<void>;
@@ -64,7 +64,7 @@ export const IPC = {
   listDisplays: 'recorder:list-displays',
   startRecording: 'recorder:start',
   stopRecording: 'recorder:stop',
-  saveAudioTrack: 'recorder:save-audio',
+  saveMediaTrack: 'recorder:save-media-track',
   recorderStatus: 'recorder:status',
   chooseExportPath: 'export:choose-path',
   exportOpen: 'export:open',

@@ -37,6 +37,7 @@ export class EditorController {
   private constructor(
     readonly opened: OpenedProject,
     readonly video: DemuxedVideo,
+    readonly camera: DemuxedVideo | null,
     readonly compositor: Compositor,
   ) {
     this.project = opened.project;
@@ -52,7 +53,8 @@ export class EditorController {
     if (!support.supported) {
       throw new Error(`This system cannot decode the screen video (codec ${video.config.codec}, ${video.width}x${video.height}). For HEVC, install "HEVC Video Extensions" from the Microsoft Store or use a GPU with HEVC decoding.`);
     }
-    const c = new EditorController(opened, video, compositor);
+    const camera = await openCamera(opened);
+    const c = new EditorController(opened, video, camera, compositor);
     await c.cursors.preload();
     if (!opened.hasHoverData) void c.analyseHoversInBackground();
     return c;
@@ -88,7 +90,7 @@ export class EditorController {
     const key = cursorModelKey(this.project, this.opened.hoverChangeTimes);
     const reuse = this.scene && key === this.cursorKey ? this.scene.cursor : undefined;
     this.cursorKey = key;
-    return new Scene(this.project, { hasCamera: false, hoverChangeTimes: this.opened.hoverChangeTimes, cursor: reuse });
+    return new Scene(this.project, { hasCamera: this.camera !== null, hoverChangeTimes: this.opened.hoverChangeTimes, cursor: reuse });
   }
 
   // ---- Preview canvas ----
@@ -98,7 +100,7 @@ export class EditorController {
     if (!ctx) throw new Error('WebGPU canvas is not available.');
     this.player?.destroy();
     this.canvas = canvas;
-    const player = new Player(canvas, ctx, this.scene, this.compositor, this.cursors, this.video, this.opened.mediaBase);
+    const player = new Player(canvas, ctx, this.scene, this.compositor, this.cursors, this.video, this.camera, this.opened.mediaBase);
     this.player = player;
     player.onTime = (t) => {
       this.playback = { timeMs: t, playing: player.isPlaying };
@@ -122,7 +124,7 @@ export class EditorController {
     const canvas = this.canvas;
     this.pause();
     try {
-      await exportProject({ scene: this.scene, compositor: this.compositor, cursors: this.cursors, video: this.video, mediaBase: this.opened.mediaBase }, settings, onProgress, signal);
+      await exportProject({ scene: this.scene, compositor: this.compositor, cursors: this.cursors, video: this.video, camera: this.camera, mediaBase: this.opened.mediaBase }, settings, onProgress, signal);
     } finally {
       if (canvas) await this.attachCanvas(canvas);
     }
@@ -235,5 +237,21 @@ export class EditorController {
     this.detachCanvas();
     this.listeners.clear();
     this.playbackListeners.clear();
+  }
+}
+
+// The webcam track, if the recording has one this system can decode. A webcam that cannot be
+// shown is not fatal: the project still opens, without the camera bubble.
+async function openCamera(opened: OpenedProject): Promise<DemuxedVideo | null> {
+  const track = opened.project.recording.webcam[0];
+  if (!track) return null;
+  try {
+    const camera = await demuxVideo(opened.mediaBase, track);
+    const support = await VideoDecoder.isConfigSupported(camera.config);
+    if (!support.supported) throw new Error(`codec ${camera.config.codec} (${camera.width}x${camera.height}) is not supported by this system's decoder`);
+    return camera;
+  } catch (err) {
+    toast('Webcam not shown', { tone: 'error', description: `The webcam video could not be read: ${(err as Error).message}` });
+    return null;
   }
 }

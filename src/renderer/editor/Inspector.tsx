@@ -210,6 +210,7 @@ export function Inspector({ editor, selectedZoom, onDeselect }: { editor: Editor
                 <Row label="Shadow">
                   <Slider label="Shadow" min={0} max={1} step={0.05} value={c.styles.shadow.intensity} format={(v) => `${Math.round(v * 100)}%`} onChange={(v, f) => edit((cfg) => (cfg.styles.shadow.intensity = v), f)} />
                 </Row>
+                {editor.camera && <CameraSection editor={editor} />}
               </>
             )}
 
@@ -376,5 +377,59 @@ function ZoomPanel({ editor, zoom, onDone }: { editor: EditorController; zoom: Z
         </Button>
       </div>
     </div>
+  );
+}
+
+const CAMERA_CORNERS = [
+  { value: 'tl', label: 'Top left', at: { x: 0, y: 0 } },
+  { value: 'tr', label: 'Top right', at: { x: 1, y: 0 } },
+  { value: 'bl', label: 'Bottom left', at: { x: 0, y: 1 } },
+  { value: 'br', label: 'Bottom right', at: { x: 1, y: 1 } },
+] as const;
+
+function CameraSection({ editor }: { editor: EditorController }) {
+  const cam = editor.project.config.camera;
+  const edit = editor.updateConfig.bind(editor);
+  const corner = CAMERA_CORNERS.find((k) => k.at.x === cam.position01.x && k.at.y === cam.position01.y)?.value ?? 'br';
+  return (
+    <>
+      <h3>Camera</h3>
+      <Row label="Show camera">
+        <Switch label="Show camera" checked={!cam.hide} onChange={(v) => edit((cfg) => (cfg.camera.hide = !v))} />
+      </Row>
+      {!cam.hide && (
+        <>
+          <Row label="Position">
+            <Segmented
+              label="Camera position"
+              value={corner}
+              options={CAMERA_CORNERS.map((k) => ({ value: k.value, label: k.label.split(' ').map((w) => w[0].toUpperCase()).join('') }))}
+              onChange={(v) => edit((cfg) => (cfg.camera.position01 = { ...CAMERA_CORNERS.find((k) => k.value === v)!.at }))}
+            />
+          </Row>
+          <Row label="Shape">
+            <Segmented
+              label="Camera shape"
+              value={cam.aspectRatio}
+              options={[
+                { value: 1, label: 'Square' },
+                { value: 16 / 9, label: 'Wide' },
+                { value: 9 / 16, label: 'Tall' },
+              ]}
+              onChange={(v) => edit((cfg) => (cfg.camera.aspectRatio = v))}
+            />
+          </Row>
+          <Row label="Size">
+            <Slider label="Camera size" min={0.2} max={0.8} step={0.01} value={cam.sizeRatio01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v, f) => edit((cfg) => (cfg.camera.sizeRatio01 = v), f)} />
+          </Row>
+          <Row label="Roundness">
+            <Slider label="Camera roundness" min={0} max={0.5} step={0.01} value={cam.borderRadiusRatio01} format={(v) => `${Math.round(v * 200)}%`} onChange={(v, f) => edit((cfg) => (cfg.camera.borderRadiusRatio01 = v), f)} />
+          </Row>
+          <Row label="Mirror">
+            <Switch label="Mirror camera" checked={cam.mirror} onChange={(v) => edit((cfg) => (cfg.camera.mirror = v))} />
+          </Row>
+        </>
+      )}
+    </>
   );
 }

@@ -134,6 +134,9 @@ function Welcome({ loading, onOpen, recorder }: { loading: boolean; onOpen: () =
               <Row label="System audio">
                 <Switch label="System audio" checked={recorder.systemAudio} onChange={recorder.setSystemAudio} />
               </Row>
+              <Row label="Webcam">
+                <Switch label="Webcam" checked={recorder.webcam} onChange={recorder.setWebcam} />
+              </Row>
               <Button variant="record" size="lg" icon={<RecordIcon size={16} />} onClick={recorder.start} disabled={recorder.phase !== 'idle'}>
                 Start recording
               </Button>

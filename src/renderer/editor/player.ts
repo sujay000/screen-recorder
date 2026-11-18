@@ -4,7 +4,8 @@
 import type { Scene } from '../../core/scene/scene';
 import type { Compositor } from '../gpu/compositor';
 import type { CursorImages } from '../media/cursor-images';
-import { type DemuxedVideo, SequentialFrames } from '../media/video-track';
+import type { DemuxedVideo } from '../media/video-track';
+import { FrameSources } from '../media/frame-sources';
 import { type AudioClip, loadAudioClips } from '../media/audio';
 import { FrameRenderer } from '../render/frame-renderer';
 
@@ -14,8 +15,7 @@ const TAPS_PAUSED = 16;
 
 export class Player {
   private renderer: FrameRenderer;
-  private frames: SequentialFrames | null = null;
-  private framesFrom = -1;
+  private readonly frames: FrameSources;
   private playing = false;
   private startWall = 0;
   private startAt = 0;
@@ -34,10 +34,12 @@ export class Player {
     private scene: Scene,
     private readonly compositor: Compositor,
     private readonly cursors: CursorImages,
-    private readonly video: DemuxedVideo,
+    video: DemuxedVideo,
+    camera: DemuxedVideo | null,
     private readonly mediaBase: string,
   ) {
     compositor.configure(ctx);
+    this.frames = new FrameSources(compositor, video, camera);
     this.renderer = this.makeRenderer();
   }
 
@@ -174,20 +176,13 @@ export class Player {
 
   private async drawAt(t: number): Promise<void> {
     const source = this.scene.cursor.timeMap.playbackToSource(t);
-    // Reuse the forward decoder while playing forward; restart from a keyframe on a jump back.
-    if (!this.frames || source < this.framesFrom || (!this.playing && source - this.framesFrom > 4000)) {
-      this.frames?.close();
-      this.frames = new SequentialFrames(this.video, source);
-    }
-    this.framesFrom = source;
-    const frame = await this.frames.frameAt(source);
-    if (frame) this.compositor.setScreenFrame(frame);
+    await this.frames.uploadAt(source, this.playing);
     this.renderer.draw(this.ctx.getCurrentTexture(), t);
   }
 
   destroy(): void {
     this.pause();
-    this.frames?.close();
+    this.frames.close();
     void this.audio?.close();
   }
 }

@@ -48,6 +48,7 @@ export interface FrameInputs {
   clickStyle: 'none' | 'circle' | 'ripple';
   ripplePull01: number;
   loupe: LoupeInputs | null;
+  camera: null | { now: RectV; before: RectV; radius: number; opacity: number; mirror: boolean };
 }
 
 // Glass loupe in screen-video pixels (the reference does its lens math in video pixels, and its
@@ -226,7 +227,19 @@ export function buildFrameInputs(
     clickStyle: clickEffect?.type ?? 'none',
     ripplePull01: clickEffect?.type === 'ripple' ? (clickEffect.pullSize01 ?? 0.04) : 0.04,
     loupe: loupeInputs(now, light, stage, videoSize, q),
+    camera: cameraInputs(scene, now, prev, strength),
   };
+}
+
+// Webcam bubble. Corner radius: the un-zoomed bubble's short side times the roundness ratio,
+// scaled with the bubble (B39 camera borderRadius / referenceWidth).
+function cameraInputs(scene: Scene, now: FrameStyle, prev: FrameStyle, strength: number): FrameInputs['camera'] {
+  const base = scene.layout.cameraRect;
+  if (!now.camera || !base) return null;
+  const cfg = scene.project.config.camera;
+  const before = prev.camera ? lerpRect(now.camera, prev.camera, strength) : now.camera;
+  const radius = Math.min(base.width, base.height) * cfg.borderRadiusRatio01 * (now.camera.width / base.width);
+  return { now: now.camera, before: nearlySame(now.camera, before) ? now.camera : before, radius, opacity: 1, mirror: cfg.mirror };
 }
 
 // Spec: render.md §5 (the reference's loupe uniform encoder).

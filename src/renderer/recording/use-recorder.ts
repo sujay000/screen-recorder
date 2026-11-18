@@ -1,22 +1,43 @@
 // Recording state for the Windows build. The native helper records screen, cursor and input;
-// the page records microphone and system audio and attaches them when recording stops.
+// the page records microphone, system audio and the webcam and attaches them when recording
+// stops.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DisplayInfo } from '../../shared/ipc';
 
-interface AudioCapture {
-  kind: 'microphone' | 'systemAudio';
+type CaptureKind = 'microphone' | 'systemAudio' | 'webcam';
+
+interface Capture {
+  kind: CaptureKind;
   recorder: MediaRecorder;
+  mimeType: string;
   chunks: Blob[];
   stream: MediaStream;
   unixStartMs: number;
 }
 
-const MIME = 'audio/webm;codecs=opus';
+const AUDIO_MIME = 'audio/webm;codecs=opus';
+// The editor demuxes video with mp4box, so the webcam must be recorded as MP4 (H.264).
+const WEBCAM_MIMES = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4'];
 
-async function startCapture(kind: AudioCapture['kind'], stream: MediaStream): Promise<AudioCapture> {
-  const recorder = new MediaRecorder(stream, { mimeType: MIME, audioBitsPerSecond: 160000 });
-  const cap: AudioCapture = { kind, recorder, chunks: [], stream, unixStartMs: 0 };
+const FILE_NAMES: Record<CaptureKind, string> = { microphone: 'microphone-0.webm', systemAudio: 'system-audio-0.webm', webcam: 'webcam-0.mp4' };
+const LABELS: Record<CaptureKind, string> = { microphone: 'Microphone', systemAudio: 'System audio', webcam: 'Webcam' };
+
+export function webcamMimeType(): string | null {
+  return WEBCAM_MIMES.find((m) => MediaRecorder.isTypeSupported(m)) ?? null;
+}
+
+async function startCapture(kind: CaptureKind, stream: MediaStream): Promise<Capture> {
+  let mimeType = AUDIO_MIME;
+  let options: MediaRecorderOptions = { mimeType, audioBitsPerSecond: 160000 };
+  if (kind === 'webcam') {
+    const m = webcamMimeType();
+    if (!m) throw new Error('this system cannot record MP4 (H.264) video with MediaRecorder');
+    mimeType = m;
+    options = { mimeType, videoBitsPerSecond: 8_000_000 };
+  }
+  const recorder = new MediaRecorder(stream, options);
+  const cap: Capture = { kind, recorder, mimeType, chunks: [], stream, unixStartMs: 0 };
   recorder.ondataavailable = (e) => e.data.size && cap.chunks.push(e.data);
   await new Promise<void>((resolve) => {
     recorder.onstart = () => {
@@ -28,13 +49,13 @@ async function startCapture(kind: AudioCapture['kind'], stream: MediaStream): Pr
   return cap;
 }
 
-async function stopCapture(cap: AudioCapture): Promise<{ data: ArrayBuffer; durationMs: number }> {
+async function stopCapture(cap: Capture): Promise<{ data: ArrayBuffer; durationMs: number }> {
   const stoppedAt = await new Promise<number>((resolve) => {
     cap.recorder.onstop = () => resolve(Date.now());
     cap.recorder.stop();
   });
   cap.stream.getTracks().forEach((t) => t.stop());
-  return { data: await new Blob(cap.chunks, { type: MIME }).arrayBuffer(), durationMs: stoppedAt - cap.unixStartMs };
+  return { data: await new Blob(cap.chunks, { type: cap.mimeType }).arrayBuffer(), durationMs: stoppedAt - cap.unixStartMs };
 }
 
 export type RecorderPhase = 'idle' | 'starting' | 'recording' | 'stopping';
@@ -45,9 +66,10 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
   const [displayId, setDisplayId] = useState('0');
   const [microphone, setMicrophone] = useState(true);
   const [systemAudio, setSystemAudio] = useState(true);
+  const [webcam, setWebcam] = useState(false);
   const [phase, setPhase] = useState<RecorderPhase>('idle');
   const [startedAt, setStartedAt] = useState(0);
-  const captures = useRef<AudioCapture[]>([]);
+  const captures = useRef<Capture[]>([]);
   // Callbacks change identity every render; keep the latest without re-subscribing.
   const callbacks = useRef({ onRecorded, onError });
   callbacks.current = { onRecorded, onError };
@@ -74,12 +96,12 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
     });
   }, [supported]);
 
-  const tryCapture = async (kind: AudioCapture['kind'], open: () => Promise<MediaStream>) => {
+  const tryCapture = async (kind: CaptureKind, open: () => Promise<MediaStream>) => {
     try {
       const stream = await open();
-      if (stream.getAudioTracks().length) captures.current.push(await startCapture(kind, stream));
+      if (stream.getTracks().length) captures.current.push(await startCapture(kind, stream));
     } catch (err) {
-      callbacks.current.onError(`${kind === 'microphone' ? 'Microphone' : 'System audio'} unavailable: ${(err as Error).message}`);
+      callbacks.current.onError(`${LABELS[kind]} unavailable: ${(err as Error).message}`);
     }
   };
 
@@ -101,8 +123,9 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
         return new MediaStream(s.getAudioTracks());
       });
     }
+    if (webcam) await tryCapture('webcam', () => navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }));
     setPhase('recording');
-  }, [displayId, microphone, systemAudio]);
+  }, [displayId, microphone, systemAudio, webcam]);
 
   const stop = useCallback(async () => {
     setPhase('stopping');
@@ -117,9 +140,9 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
     }
     if (result?.error) callbacks.current.onError(`Recorder warning: ${result.error}`);
     for (const { c, r } of audio) {
-      const name = c.kind === 'microphone' ? 'microphone-0.webm' : 'system-audio-0.webm';
+      const name = FILE_NAMES[c.kind];
       try {
-        await window.recorder.saveAudioTrack(bundle, name, r.data, { kind: c.kind, unixStartMs: c.unixStartMs, durationMs: r.durationMs });
+        await window.recorder.saveMediaTrack(bundle, name, r.data, { kind: c.kind, unixStartMs: c.unixStartMs, durationMs: r.durationMs });
       } catch (err) {
         callbacks.current.onError(`Saving ${name} (${r.data.byteLength} bytes) failed: ${(err as Error).message}`);
       }
@@ -128,5 +151,5 @@ export function useRecorder(onRecorded: (bundlePath: string) => void, onError: (
     callbacks.current.onRecorded(bundle);
   }, []);
 
-  return { supported, displays, displayId, setDisplayId, microphone, setMicrophone, systemAudio, setSystemAudio, phase, startedAt, start, stop };
+  return { supported, displays, displayId, setDisplayId, microphone, setMicrophone, systemAudio, setSystemAudio, webcam, setWebcam, phase, startedAt, start, stop };
 }

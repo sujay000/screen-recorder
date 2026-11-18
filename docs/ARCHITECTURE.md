@@ -43,6 +43,7 @@ native/win-recorder (Rust)          src/main (Electron main)            src/rend
     keystrokes-0.json      keyDown / keyUp
     cursors.json, cursors/<id>.png   every cursor shape seen, hotspot + size in points
     microphone-0.webm, system-audio-0.webm   recorded by the page, start time in metadata
+    webcam-0.mp4           recorded by the page with MediaRecorder as H.264 MP4 (mp4box demuxes it)
   recorder-project.json    editor state: config, zooms, slices
 ```
 
@@ -73,5 +74,6 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 - Loupe zooms: the rim blur reads one 9-tap ring instead of mip levels, and the magnified view
   includes the background instead of a separately frosted backdrop (only visible where the lens
   leaves the screen).
-- No webcam or camera layouts in the UI yet (the layout math in `core/camera/layout.ts` supports
-  the overlay bubble).
+- Webcam: only the camera-overlay layout (bubble in a corner). Split-screen, cutout and
+  fullscreen-camera layouts, face tracking, grain and LUTs are not implemented. The bubble is
+  drawn above the loupe in its own blended pass.

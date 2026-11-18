@@ -9,12 +9,19 @@ import shaderSource from './compositor.wgsl';
 import loupeSource from './loupe.wgsl';
 import type { FrameInputs, LoupeInputs, RectV } from '../../core/scene/frame-inputs';
 
-const PARAM_FLOATS = 108;
+const PARAM_FLOATS = 124;
 const LOUPE_PARAM_FLOATS = 28;
 
 interface Pipelines {
   scene: GPURenderPipeline;
   loupe: GPURenderPipeline;
+  overlay: GPURenderPipeline; // scene shader blended over the target (webcam above the loupe)
+}
+
+const enum DrawMode {
+  All = 0,
+  WithoutCamera = 1,
+  CameraOnly = 2,
 }
 
 export class Compositor {
@@ -28,18 +35,22 @@ export class Compositor {
     this.params = this.uniformBuffer(PARAM_FLOATS);
     this.magnifiedParams = this.uniformBuffer(PARAM_FLOATS);
     this.loupeParams = this.uniformBuffer(LOUPE_PARAM_FLOATS);
+    this.cameraParams = this.uniformBuffer(PARAM_FLOATS);
   }
 
   private pipelines = new Map<GPUTextureFormat, Pipelines>();
   private readonly params: GPUBuffer;
   private readonly magnifiedParams: GPUBuffer;
   private readonly loupeParams: GPUBuffer;
+  private readonly cameraParams: GPUBuffer;
   private plainTarget: GPUTexture | null = null;
   private magnifiedTarget: GPUTexture | null = null;
 
   private screenTex: GPUTexture | null = null;
   private cursorTex!: GPUTexture;
   private bgTex!: GPUTexture;
+  private cameraTex: GPUTexture | null = null;
+  private hasCameraFrame = false;
   private bgSize: [number, number] = [1, 1];
   private cursorKey: string | null = null;
   private data = new Float32Array(PARAM_FLOATS);
@@ -72,14 +83,18 @@ export class Compositor {
   private pipelinesFor(format: GPUTextureFormat): Pipelines {
     let p = this.pipelines.get(format);
     if (!p) {
-      const make = (module: GPUShaderModule) =>
+      const premultipliedOver: GPUBlendState = {
+        color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+        alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+      };
+      const make = (module: GPUShaderModule, blend?: GPUBlendState) =>
         this.device.createRenderPipeline({
           layout: 'auto',
           vertex: { module, entryPoint: 'vs' },
-          fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+          fragment: { module, entryPoint: 'fs', targets: [{ format, blend }] },
           primitive: { topology: 'triangle-list' },
         });
-      p = { scene: make(this.sceneModule), loupe: make(this.loupeModule) };
+      p = { scene: make(this.sceneModule), loupe: make(this.loupeModule), overlay: make(this.sceneModule, premultipliedOver) };
       this.pipelines.set(format, p);
     }
     return p;
@@ -116,6 +131,12 @@ export class Compositor {
     this.screenTex = this.uploadImage(frame, w, h, this.screenTex);
   }
 
+  // null: no webcam frame at this time (before the webcam started, or no webcam).
+  setCameraFrame(frame: VideoFrame | null): void {
+    this.hasCameraFrame = frame !== null && frame.displayWidth > 0;
+    if (frame && this.hasCameraFrame) this.cameraTex = this.uploadImage(frame, frame.displayWidth, frame.displayHeight, this.cameraTex);
+  }
+
   setCursorImage(key: string, img: ImageBitmap): void {
     if (this.cursorKey === key) return;
     this.cursorTex.destroy();
@@ -137,13 +158,14 @@ export class Compositor {
   render(target: GPUTexture, f: FrameInputs, pxPerUnit: number): void {
     const pipes = this.pipelinesFor(target.format);
     const enc = this.device.createCommandEncoder();
-    this.writeParams(this.params, f, pxPerUnit, null);
     if (!f.loupe) {
+      this.writeParams(this.params, f, pxPerUnit, null, DrawMode.All);
       this.drawScene(enc, pipes.scene, this.params, target);
     } else {
       this.plainTarget = this.offscreen(this.plainTarget, target);
       this.magnifiedTarget = this.offscreen(this.magnifiedTarget, target);
-      this.writeParams(this.magnifiedParams, f, pxPerUnit, f.loupe);
+      this.writeParams(this.params, f, pxPerUnit, null, DrawMode.WithoutCamera);
+      this.writeParams(this.magnifiedParams, f, pxPerUnit, f.loupe, DrawMode.WithoutCamera);
       this.writeLoupeParams(f, f.loupe, pxPerUnit);
       this.drawScene(enc, pipes.scene, this.params, this.plainTarget);
       this.drawScene(enc, pipes.scene, this.magnifiedParams, this.magnifiedTarget);
@@ -156,7 +178,11 @@ export class Compositor {
           { binding: 3, resource: this.magnifiedTarget.createView() },
         ],
       });
-      this.fullScreenPass(enc, pipes.loupe, bind, target);
+      this.fullScreenPass(enc, pipes.loupe, bind, target, 'clear');
+      if (f.camera) {
+        this.writeParams(this.cameraParams, f, pxPerUnit, null, DrawMode.CameraOnly);
+        this.drawScene(enc, pipes.overlay, this.cameraParams, target, 'load');
+      }
     }
     this.device.queue.submit([enc.finish()]);
   }
@@ -167,7 +193,7 @@ export class Compositor {
     return this.device.createTexture({ size: [like.width, like.height], format: like.format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
   }
 
-  private drawScene(enc: GPUCommandEncoder, pipeline: GPURenderPipeline, params: GPUBuffer, target: GPUTexture): void {
+  private drawScene(enc: GPUCommandEncoder, pipeline: GPURenderPipeline, params: GPUBuffer, target: GPUTexture, load: GPULoadOp = 'clear'): void {
     const bind = this.device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
       entries: [
@@ -176,13 +202,14 @@ export class Compositor {
         { binding: 2, resource: (this.screenTex ?? this.bgTex).createView() },
         { binding: 3, resource: this.cursorTex.createView() },
         { binding: 4, resource: this.bgTex.createView() },
+        { binding: 5, resource: (this.cameraTex ?? this.bgTex).createView() },
       ],
     });
-    this.fullScreenPass(enc, pipeline, bind, target);
+    this.fullScreenPass(enc, pipeline, bind, target, load);
   }
 
-  private fullScreenPass(enc: GPUCommandEncoder, pipeline: GPURenderPipeline, bind: GPUBindGroup, target: GPUTexture): void {
-    const pass = enc.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+  private fullScreenPass(enc: GPUCommandEncoder, pipeline: GPURenderPipeline, bind: GPUBindGroup, target: GPUTexture, load: GPULoadOp): void {
+    const pass = enc.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: load, storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bind);
     pass.draw(3);
@@ -191,7 +218,7 @@ export class Compositor {
 
   // Field order and offsets must match struct Params in compositor.wgsl.
   // `magnified`: draw the scene magnified about the loupe centre instead.
-  private writeParams(buffer: GPUBuffer, f: FrameInputs, pxPerUnit: number, magnified: LoupeInputs | null): void {
+  private writeParams(buffer: GPUBuffer, f: FrameInputs, pxPerUnit: number, magnified: LoupeInputs | null, mode: DrawMode): void {
     const d = this.data;
     d.fill(0);
     const rect = (o: number, r: RectV) => d.set([r.x, r.y, r.width, r.height], o);
@@ -218,7 +245,14 @@ export class Compositor {
     }
     d.set([Math.min(3, f.clicks.length), f.clickStyle === 'circle' ? 1 : f.clickStyle === 'ripple' ? 2 : 0, f.screenNow.width, f.ripplePull01], 88);
     f.clicks.slice(0, 3).forEach((k, i) => d.set([k.x, k.y, k.age01, 0], 92 + i * 4));
-    d.set([...(magnified ? magnified.magnifyCenter : [0, 0]), viewScale, 0], 104);
+    d.set([...(magnified ? magnified.magnifyCenter : [0, 0]), viewScale, mode], 104);
+    const cam = f.camera;
+    if (cam && this.cameraTex && this.hasCameraFrame) {
+      rect(108, cam.now);
+      rect(112, cam.before);
+      d.set([cam.radius, cam.opacity, cam.mirror ? 1 : 0, 1], 116);
+      d.set([this.cameraTex.width, this.cameraTex.height, 0, 0], 120);
+    }
     this.device.queue.writeBuffer(buffer, 0, d);
   }
 

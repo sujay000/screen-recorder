@@ -7,9 +7,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { openProject, readOwnHoverTimes, readReferenceHoverTimes, saveOwnHoverTimes, saveProject } from '../node/bundle';
-import { addAudioTrack } from '../node/recording-writer';
+import { addMediaTrack } from '../node/recording-writer';
 import type { Project } from '../core/project/model';
-import { IPC, type AudioTrackInfo, type DisplayInfo, type OpenedProject, type RecorderStatus } from '../shared/ipc';
+import { IPC, type MediaTrackInfo, type DisplayInfo, type OpenedProject, type RecorderStatus } from '../shared/ipc';
 import { appendTo, log, mainLogPath } from './log';
 import { NativeRecorder, helperPath } from './native-recorder';
 
@@ -150,13 +150,13 @@ function registerIpc(): void {
     return { bundle, error: ev.event === 'error' ? ev.message : undefined };
   });
 
-  ipcMain.handle(IPC.saveAudioTrack, (_e, bundle: string, fileName: string, data: ArrayBuffer, info: AudioTrackInfo) => {
+  ipcMain.handle(IPC.saveMediaTrack, (_e, bundle: string, fileName: string, data: ArrayBuffer, info: MediaTrackInfo) => {
     // Only into a bundle this session created or opened.
     const recDir = path.join(bundle, 'recording');
     if (![...allowedRoots.values()].includes(recDir) && bundle !== lastRecordedBundle) throw new Error('Unknown recording');
     const safe = path.basename(fileName);
     fs.writeFileSync(path.join(recDir, safe), Buffer.from(data));
-    addAudioTrack(recDir, { ...info, fileName: safe });
+    addMediaTrack(recDir, { ...info, fileName: safe });
   });
 
   ipcMain.handle(IPC.chooseExportPath, async (_e, name: string) => {

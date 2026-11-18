@@ -6,7 +6,8 @@ import { Muxer, StreamTarget } from 'mp4-muxer';
 import type { Scene } from '../../core/scene/scene';
 import type { Compositor } from '../gpu/compositor';
 import type { CursorImages } from '../media/cursor-images';
-import { type DemuxedVideo, SequentialFrames } from '../media/video-track';
+import type { DemuxedVideo } from '../media/video-track';
+import { FrameSources } from '../media/frame-sources';
 import { encodeMix, loadAudioClips, pickAudioCodec, SAMPLE_RATE } from '../media/audio';
 import { FrameRenderer } from '../render/frame-renderer';
 
@@ -46,7 +47,7 @@ async function pickVideoCodec(width: number, height: number, fps: number): Promi
 }
 
 export async function exportProject(
-  opts: { scene: Scene; compositor: Compositor; cursors: CursorImages; video: DemuxedVideo; mediaBase: string },
+  opts: { scene: Scene; compositor: Compositor; cursors: CursorImages; video: DemuxedVideo; camera: DemuxedVideo | null; mediaBase: string },
   settings: ExportSettings,
   onProgress: (p: ExportProgress) => void,
   signal: AbortSignal,
@@ -73,7 +74,7 @@ export async function exportProject(
   let writeError: Error | null = null;
   let encodeError: Error | null = null;
   let vEncoder: VideoEncoder | null = null;
-  let source: SequentialFrames | null = null;
+  let source: FrameSources | null = null;
   let succeeded = false;
   try {
     const muxer = new Muxer({
@@ -114,14 +115,13 @@ export async function exportProject(
     if (!ctx) throw new Error('WebGPU is not available for export (OffscreenCanvas webgpu context).');
     compositor.configure(ctx);
     const renderer = new FrameRenderer(scene, compositor, cursors, { fps: settings.fps, motionBlurTaps: EXPORT_MOTION_BLUR_TAPS, motionBlurEnabled: true });
-    source = new SequentialFrames(video);
+    source = new FrameSources(compositor, video, opts.camera);
     for (let f = 0; f < frames; f++) {
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
       if (encodeError) throw encodeError;
       if (writeError) throw writeError;
       const t = (f * 1000) / settings.fps;
-      const frame = await source.frameAt(scene.cursor.timeMap.playbackToSource(t));
-      if (frame) compositor.setScreenFrame(frame);
+      await source.uploadAt(scene.cursor.timeMap.playbackToSource(t), true);
       renderer.draw(ctx.getCurrentTexture(), t);
       await compositor.device.queue.onSubmittedWorkDone();
       const vf = new VideoFrame(canvas, { timestamp: Math.round(t * 1000), duration: Math.round(1e6 / settings.fps) });

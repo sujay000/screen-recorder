@@ -4,6 +4,8 @@
 import type { EditorController } from './editor/editor-controller';
 import type { OpenedProject } from '../shared/ipc';
 import { analyseHovers } from './media/hover-analysis';
+import { webcamMimeType } from './recording/use-recorder';
+import { demuxBytes, SequentialFrames } from './media/video-track';
 
 export interface SelfTestJob {
   bundle: string;
@@ -14,6 +16,7 @@ export interface SelfTestJob {
   seekMs?: number;
   audioProbe?: boolean; // record 3 s with MediaRecorder (as the Windows app does) and decode it
   hoverProbe?: boolean; // run our hover detector and compare with the reference app's cache
+  webcamProbe?: boolean; // record 3 s of video as MP4 with MediaRecorder (as the Windows webcam) and decode it
 }
 
 const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -23,6 +26,12 @@ export async function runSelfTest(job: SelfTestJob, open: (o: OpenedProject) => 
   try {
     if (job.audioProbe) {
       Object.assign(result, await probeMediaRecorderAudio());
+      result.ok = true;
+      await window.recorder.reportSelfTest(result);
+      return;
+    }
+    if (job.webcamProbe) {
+      Object.assign(result, await probeMediaRecorderWebcam());
       result.ok = true;
       await window.recorder.reportSelfTest(result);
       return;
@@ -94,4 +103,37 @@ async function probeMediaRecorderAudio(): Promise<Record<string, unknown>> {
   let peak = 0;
   for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]));
   return { webmBytes: bytes.byteLength, decodedSeconds: +decoded.duration.toFixed(3), channels: decoded.numberOfChannels, peak: +peak.toFixed(3) };
+}
+
+// The webcam is recorded as MP4 so mp4box can demux it. Check the whole chain on a canvas stream.
+async function probeMediaRecorderWebcam(): Promise<Record<string, unknown>> {
+  const mimeType = webcamMimeType();
+  if (!mimeType) return { mimeType: null };
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 360;
+  const g = canvas.getContext('2d')!;
+  let frame = 0;
+  const timer = setInterval(() => {
+    g.fillStyle = `hsl(${(frame++ * 7) % 360} 70% 50%)`;
+    g.fillRect(0, 0, 640, 360);
+  }, 33);
+  const stream = canvas.captureStream(30);
+  const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 });
+  const chunks: Blob[] = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const done = new Promise<void>((r) => (rec.onstop = () => r()));
+  rec.start(1000);
+  await settle(3000);
+  rec.stop();
+  await done;
+  clearInterval(timer);
+  const blob = new Blob(chunks, { type: mimeType });
+  const video = await demuxBytes(new Uint8Array(await blob.arrayBuffer()), 0);
+  const frames = new SequentialFrames(video);
+  let decoded = 0;
+  for (const s of video.samples) if (await frames.frameAt(s.timeMs)) decoded++;
+  frames.close();
+  const last = video.samples[video.samples.length - 1];
+  return { mimeType, bytes: blob.size, codec: video.config.codec, size: [video.width, video.height], samples: video.samples.length, decoded, lastSampleMs: Math.round(last?.timeMs ?? 0) };
 }

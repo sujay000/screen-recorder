@@ -43,7 +43,15 @@ struct Params {
   clicks: array<vec4f, 3>,   // x, y (stage units), age01, unused
   viewCenter: vec2f,         // draw the stage magnified viewScale x about this point
   viewScale: f32,            // (1 = normal; the loupe pass reads a magnified copy)
-  _pad: f32,
+  drawMode: f32,             // 0 everything, 1 all but the webcam, 2 only the webcam (and its shadow)
+  cameraNow: vec4f,          // webcam bubble rect
+  cameraBefore: vec4f,
+  cameraRadius: f32,         // at cameraNow's size
+  cameraOpacity: f32,
+  cameraMirror: f32,
+  hasCamera: f32,
+  cameraSize: vec2f,         // webcam frame size in pixels
+  _pad2: vec2f,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -51,6 +59,7 @@ struct Params {
 @group(0) @binding(2) var screenTex: texture_2d<f32>;
 @group(0) @binding(3) var cursorTex: texture_2d<f32>;
 @group(0) @binding(4) var bgTex: texture_2d<f32>;
+@group(0) @binding(5) var cameraTex: texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) pos: vec4f,
@@ -234,10 +243,9 @@ fn background(p: vec2f) -> vec4f {
 
 // ---- Shadow (directional sphere trace toward the light, render.md §3.2) ---------------------
 
-fn screenShadowMask(p: vec2f) -> f32 {
-  let rect = P.screenNow;
+fn rectShadowMask(p: vec2f, rect: vec4f, radius: f32) -> f32 {
   if (P.shadowDirectional > 0.5) {
-    let d0 = sdRoundRect(p, rect, P.screenRadius);
+    let d0 = sdRoundRect(p, rect, radius);
     let proximity = 1.0 - clamp(d0 / P.shadowFalloff, 0.0, 1.0);
     if (proximity <= 0.001) { return 0.0; }
     let toLight = P.lightPos - p;
@@ -248,15 +256,51 @@ fn screenShadowMask(p: vec2f) -> f32 {
     var t = 2.0;
     for (var i = 0; i < 12; i++) {
       if (t >= dist || vis < -0.5) { break; }
-      let h = sdRoundRect(p + dir * t, rect, P.screenRadius);
+      let h = sdRoundRect(p + dir * t, rect, radius);
       vis = min(vis, k * h / t);
       t += max(h, 3.0);
     }
     return (1.0 - clamp(vis, 0.0, 1.0)) * proximity * proximity;
   }
   let aa = aaUnits();
-  let d = sdRoundRect(p - P.shadowOffset, rect, P.screenRadius);
+  let d = sdRoundRect(p - P.shadowOffset, rect, radius);
   return smoothstep(P.shadowBlur + aa, -0.5 * P.shadowBlur - aa, d);
+}
+
+fn shadowOver(color: vec4f, mask: f32) -> vec4f {
+  let a = mask * P.shadowColor.a;
+  return over(vec4f(toBlurLinear(vec4f(P.shadowColor.rgb, 1.0)).rgb * a, a), color);
+}
+
+// ---- Webcam bubble (cover-fit, rounded, optional mirror) --------------------------------------
+
+fn cameraSample(p: vec2f, rect: vec4f) -> vec4f {
+  let aa = aaUnits();
+  let cov = smoothstep(aa, -aa, sdRoundRect(p, rect, P.cameraRadius * rect.z / max(P.cameraNow.z, 1e-4)));
+  if (cov <= 0.0) { return vec4f(0.0); }
+  var uv = clamp((p - rect.xy) / rect.zw, vec2f(0.0), vec2f(1.0));
+  let rectAspect = rect.z / max(rect.w, 1e-4);
+  let texAspect = P.cameraSize.x / max(P.cameraSize.y, 1.0);
+  if (texAspect > rectAspect) {
+    uv.x = 0.5 + (uv.x - 0.5) * rectAspect / texAspect;
+  } else {
+    uv.y = 0.5 + (uv.y - 0.5) * texAspect / rectAspect;
+  }
+  if (P.cameraMirror > 0.5) { uv.x = 1.0 - uv.x; }
+  let c = textureSampleLevel(cameraTex, linearSampler, uv, 0.0);
+  return toBlurLinear(vec4f(c.rgb, 1.0)) * cov;
+}
+
+fn cameraLayer(p: vec2f, frag: vec2f) -> vec4f {
+  let n = max(1.0, P.blurTaps);
+  if (n <= 1.0 || all(P.cameraNow == P.cameraBefore)) { return cameraSample(p, P.cameraNow) * P.cameraOpacity; }
+  let jitter = bayer8(frag + vec2f(6.0, 1.0));
+  var acc = vec4f(0.0);
+  for (var i = 0.0; i < 32.0; i += 1.0) {
+    if (i >= n) { break; }
+    acc += cameraSample(p, mix(P.cameraBefore, P.cameraNow, (i + jitter) / n));
+  }
+  return acc / n * P.cameraOpacity;
 }
 
 // ---- Screen with motion blur ----------------------------------------------------------------
@@ -387,14 +431,19 @@ fn clickLayer(p: vec2f) -> vec4f {
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4f {
   let p = P.viewCenter + (in.stage - P.viewCenter) / P.viewScale;
-  var color = background(p);
-  // Shadow goes only where the screen does not cover.
-  let shadow = screenShadowMask(p) * P.shadowColor.a * P.hasScreen;
-  color = over(vec4f(toBlurLinear(vec4f(P.shadowColor.rgb, 1.0)).rgb * shadow, shadow), color);
-  let scr = screenLayer(p, in.pos.xy);
-  color = over(scr, color);
-  color = over(clickLayer(p), color);
-  color = over(cursorLayer(p, in.pos.xy), color);
+  var color = vec4f(0.0);
+  if (P.drawMode < 1.5) {
+    color = background(p);
+    // Shadow goes only where the screen does not cover.
+    color = shadowOver(color, rectShadowMask(p, P.screenNow, P.screenRadius) * P.hasScreen);
+    color = over(screenLayer(p, in.pos.xy), color);
+    color = over(clickLayer(p), color);
+    color = over(cursorLayer(p, in.pos.xy), color);
+  }
+  if (P.drawMode != 1.0 && P.hasCamera > 0.5 && P.cameraOpacity > 0.001) {
+    color = shadowOver(color, rectShadowMask(p, P.cameraNow, P.cameraRadius) * P.cameraOpacity);
+    color = over(cameraLayer(p, in.pos.xy), color);
+  }
   var outc = fromBlurLinear(color);
   outc = vec4f(outc.rgb + (bayer8(in.pos.xy) - 0.5) / 255.0 * outc.a, outc.a);
   return outc;
