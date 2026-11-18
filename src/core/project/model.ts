@@ -26,14 +26,20 @@ export interface MouseEvent {
 
 export interface RawKeyEvent {
   type: 'keyDown' | 'keyUp';
-  character?: string;
+  character?: string; // macOS recordings
+  keyCode?: number; // Windows recordings: virtual-key code
   processTimeMs: number;
   isARepeat?: boolean;
+  activeModifiers?: string[];
 }
 
 export interface KeyEvent {
   type: 'keyDown' | 'keyUp';
   character?: string;
+  keyCode?: number;
+  isARepeat: boolean;
+  // Normalised to the reference's names: command, option, shift, control, capsLock, function.
+  activeModifiers: string[];
   recordingTimeMs: number;
 }
 
@@ -139,6 +145,8 @@ export interface ProjectConfig {
     shadow: { intensity: number; distance: number; angle: number; blur: number; isDirectional: boolean };
     background: BackgroundConfig;
   };
+  // Keyboard shortcut keycaps at the bottom of the video (off by default, as in the reference).
+  shortcuts: { enabled: boolean; showSingleLetters: boolean; sizeRatio: number };
   camera: { hide: boolean; sizeRatio01: number; position01: Vec2; aspectRatio: number; borderRadiusRatio01: number; mirror: boolean };
   audio: { muteMicrophone: boolean; muteSystemAudio: boolean; volume: number };
 }
@@ -199,6 +207,7 @@ export function defaultConfig(): ProjectConfig {
         blur: 0,
       },
     },
+    shortcuts: { enabled: false, showSingleLetters: false, sizeRatio: 0.1 },
     camera: { hide: false, sizeRatio01: 0.5, position01: { x: 1, y: 1 }, aspectRatio: 1, borderRadiusRatio01: 0.15, mirror: false },
     audio: { muteMicrophone: false, muteSystemAudio: false, volume: 1 },
   };

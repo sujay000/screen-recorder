@@ -7,6 +7,7 @@
 
 import shaderSource from './compositor.wgsl';
 import loupeSource from './loupe.wgsl';
+import overlaySource from './overlay.wgsl';
 import type { FrameInputs, LoupeInputs, RectV } from '../../core/scene/frame-inputs';
 
 const PARAM_FLOATS = 124;
@@ -16,6 +17,7 @@ interface Pipelines {
   scene: GPURenderPipeline;
   loupe: GPURenderPipeline;
   overlay: GPURenderPipeline; // scene shader blended over the target (webcam above the loupe)
+  keycaps: GPURenderPipeline; // overlay texture blended over the finished frame
 }
 
 const enum DrawMode {
@@ -31,6 +33,7 @@ export class Compositor {
     private readonly sampler: GPUSampler,
     private readonly sceneModule: GPUShaderModule,
     private readonly loupeModule: GPUShaderModule,
+    private readonly overlayModule: GPUShaderModule,
   ) {
     this.params = this.uniformBuffer(PARAM_FLOATS);
     this.magnifiedParams = this.uniformBuffer(PARAM_FLOATS);
@@ -50,6 +53,8 @@ export class Compositor {
   private cursorTex!: GPUTexture;
   private bgTex!: GPUTexture;
   private cameraTex: GPUTexture | null = null;
+  private overlayTex: GPUTexture | null = null;
+  private hasOverlay = false;
   private hasCameraFrame = false;
   private bgSize: [number, number] = [1, 1];
   private cursorKey: string | null = null;
@@ -64,7 +69,7 @@ export class Compositor {
     const device = await adapter.requestDevice();
     const format = navigator.gpu.getPreferredCanvasFormat();
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
-    const c = new Compositor(device, format, sampler, device.createShaderModule({ code: shaderSource }), device.createShaderModule({ code: loupeSource }));
+    const c = new Compositor(device, format, sampler, device.createShaderModule({ code: shaderSource }), device.createShaderModule({ code: loupeSource }), device.createShaderModule({ code: overlaySource }));
     c.cursorTex = c.solidTexture([0, 0, 0, 0]);
     c.bgTex = c.solidTexture([0, 0, 0, 255]);
     return c;
@@ -94,7 +99,7 @@ export class Compositor {
           fragment: { module, entryPoint: 'fs', targets: [{ format, blend }] },
           primitive: { topology: 'triangle-list' },
         });
-      p = { scene: make(this.sceneModule), loupe: make(this.loupeModule), overlay: make(this.sceneModule, premultipliedOver) };
+      p = { scene: make(this.sceneModule), loupe: make(this.loupeModule), overlay: make(this.sceneModule, premultipliedOver), keycaps: make(this.overlayModule, premultipliedOver) };
       this.pipelines.set(format, p);
     }
     return p;
@@ -129,6 +134,17 @@ export class Compositor {
     const h = frame instanceof VideoFrame ? frame.displayHeight : frame.videoHeight;
     if (!w || !h) return;
     this.screenTex = this.uploadImage(frame, w, h, this.screenTex);
+  }
+
+  // Premultiplied overlay drawn over the finished frame (keycaps), or null for none.
+  setOverlay(source: OffscreenCanvas | null): void {
+    this.hasOverlay = source !== null;
+    if (!source) return;
+    if (!this.overlayTex || this.overlayTex.width !== source.width || this.overlayTex.height !== source.height) {
+      this.overlayTex?.destroy();
+      this.overlayTex = this.device.createTexture({ size: [source.width, source.height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+    }
+    this.device.queue.copyExternalImageToTexture({ source }, { texture: this.overlayTex, premultipliedAlpha: true }, [source.width, source.height]);
   }
 
   // null: no webcam frame at this time (before the webcam started, or no webcam).
@@ -183,6 +199,16 @@ export class Compositor {
         this.writeParams(this.cameraParams, f, pxPerUnit, null, DrawMode.CameraOnly);
         this.drawScene(enc, pipes.overlay, this.cameraParams, target, 'load');
       }
+    }
+    if (this.hasOverlay && this.overlayTex) {
+      const bind = this.device.createBindGroup({
+        layout: pipes.keycaps.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: this.overlayTex.createView() },
+        ],
+      });
+      this.fullScreenPass(enc, pipes.keycaps, bind, target, 'load');
     }
     this.device.queue.submit([enc.finish()]);
   }

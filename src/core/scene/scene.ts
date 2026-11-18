@@ -6,6 +6,7 @@ import { Layout } from '../camera/layout';
 import { decimate, groupAt, groupSamples, isInInstantSnapWindow, loupeZoomAt, type MovementGroup, nearestZoomAround, screenMovingZoom, zoomSamples } from '../camera/zoom';
 import { type ResolvedSpringConfig, SPRING_PRESETS, resolveSpring } from '../animation/spring';
 import { CursorModel } from '../cursor/cursor';
+import { ShortcutOverlay } from '../keyboard/shortcuts';
 import type { MouseEvent, Project, Zoom } from '../project/model';
 import type { Vec2 } from '../geometry/rect';
 import type { FrameStyle, LoupeStyle } from './frame-style';
@@ -42,6 +43,7 @@ export class Scene {
   readonly project: Project;
   readonly layout: Layout;
   readonly cursor: CursorModel;
+  readonly shortcuts: ShortcutOverlay;
   private decimated: MouseEvent[];
   private zoomGroups = new Map<string, MovementGroup[]>();
   private restGroups: MovementGroup[];
@@ -61,6 +63,7 @@ export class Scene {
           : null,
     });
     this.cursor = opts.cursor ?? new CursorModel(project, opts.hoverChangeTimes ?? []);
+    this.shortcuts = new ShortcutOverlay(project.recording.keystrokes, project.recording.mouseEvents, project.slices, cfg.shortcuts);
     this.decimated = decimate(this.cursor.events, 10);
     const restSamples = this.decimated.map((e) => ({ t: e.recordingTimeMs, x: e.x, y: e.y }));
     const rd = this.layout.getVisibleSourcePart(1);

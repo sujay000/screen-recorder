@@ -34,6 +34,9 @@ interface Metadata {
   mode?: string;
 }
 
+// The Windows recorder writes alt/meta; the reference (and the shortcut overlay) uses option/command.
+const WINDOWS_MODIFIER_NAMES: Record<string, string> = { alt: 'option', meta: 'command' };
+
 function track(file: string | undefined, sessionIndex: number, startOffsetMs: number): MediaTrack | null {
   if (!file) return null;
   return file.endsWith('.m3u8') ? { playlist: file, sessionIndex, startOffsetMs } : { file, sessionIndex, startOffsetMs };
@@ -68,7 +71,15 @@ export function loadRecording(reader: BundleReader): Recording {
     for (const e of mm) moves.push({ type: e.type, x: e.x, y: e.y, cursorId: e.cursorId, recordingTimeMs: toRec(si, e.processTimeMs) });
     for (const e of mc)
       clicks.push({ type: e.type, x: e.x, y: e.y, cursorId: e.cursorId, recordingTimeMs: toRec(si, e.processTimeMs), button: e.button });
-    for (const e of ks) keys.push({ type: e.type, character: e.character, recordingTimeMs: toRec(si, e.processTimeMs) });
+    for (const e of ks)
+      keys.push({
+        type: e.type,
+        character: e.character,
+        keyCode: e.keyCode,
+        isARepeat: !!e.isARepeat,
+        activeModifiers: (e.activeModifiers ?? []).map((m) => WINDOWS_MODIFIER_NAMES[m] ?? m),
+        recordingTimeMs: toRec(si, e.processTimeMs),
+      });
   });
   const mouseEvents = [...moves, ...clicks].sort((a, b) => a.recordingTimeMs - b.recordingTimeMs);
   keys.sort((a, b) => a.recordingTimeMs - b.recordingTimeMs);

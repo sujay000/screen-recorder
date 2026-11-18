@@ -263,6 +263,20 @@ export function Inspector({ editor, selectedZoom, selectedClip, onDeselect }: { 
                 <Row label="Hide when idle" hint="After 2 seconds">
                   <Switch label="Hide when idle" checked={c.cursor.hideNotMovingAfterMs !== null} onChange={(v) => edit((cfg) => (cfg.cursor.hideNotMovingAfterMs = v ? 2000 : null))} />
                 </Row>
+                <h3>Keyboard</h3>
+                <Row label="Show shortcuts" hint={editor.project.recording.keystrokes.length ? `${editor.scene.shortcuts.pressCount ? 'Keycaps' : 'No shortcuts found'} at the bottom of the video` : 'No keystrokes in this recording'}>
+                  <Switch label="Show shortcuts" checked={c.shortcuts.enabled} onChange={(v) => edit((cfg) => (cfg.shortcuts.enabled = v))} />
+                </Row>
+                {c.shortcuts.enabled && (
+                  <>
+                    <Row label="Single keys" hint="Also show plain letters and digits">
+                      <Switch label="Single keys" checked={c.shortcuts.showSingleLetters} onChange={(v) => edit((cfg) => (cfg.shortcuts.showSingleLetters = v))} />
+                    </Row>
+                    <Row label="Size">
+                      <Slider label="Shortcut size" min={0.05} max={0.2} step={0.005} value={c.shortcuts.sizeRatio} format={(v) => `${Math.round(v * 100)}%`} onChange={(v, f) => edit((cfg) => (cfg.shortcuts.sizeRatio = v), f)} />
+                    </Row>
+                  </>
+                )}
               </>
             )}
 
