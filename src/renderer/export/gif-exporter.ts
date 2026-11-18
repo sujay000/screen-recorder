@@ -34,7 +34,7 @@ export async function exportGif(
   const readback = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true });
   if (!readback) throw new Error('Canvas 2D is not available to read frames back for the GIF.');
   const renderer = new FrameRenderer(scene, compositor, opts.cursors, { fps: settings.fps, motionBlurTaps: GIF_MOTION_BLUR_TAPS, motionBlurEnabled: true });
-  const sources = new FrameSources(compositor, opts.video, opts.camera);
+  const sources = new FrameSources(compositor, opts.video, opts.camera, () => scene.project.config.camera.layout === 'cutout');
   const gif = GIFEncoder();
   let shownMs = 0;
   try {

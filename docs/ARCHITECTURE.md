@@ -79,8 +79,9 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 - Loupe zooms: the rim blur reads one 9-tap ring instead of mip levels, and the magnified view
   includes the background instead of a separately frosted backdrop (only visible where the lens
   leaves the screen).
-- Webcam layouts: bubble (camera-overlay) and split screen as the project layout, plus per-clip
+- Webcam layouts: bubble, split screen and cutout as the project layout, plus per-clip
   camera-only and screen-only. Split screen always rests the screen on its own side (the
-  reference flips it when the cursor nears the camera panel) and has no padding option.
-  Cutout (background removal) and face tracking are not implemented. Webcam film grain follows
-  the reference shader; .cube LUTs are stored as 8-bit 3D textures.
+  reference flips it when the cursor nears the camera panel) and has no padding option. Cutout
+  uses MediaPipe's selfie segmenter (bundled, local) per frame; its shadow is an offset blurred
+  silhouette rather than the reference's pre-baked shadow field. Face tracking uses BlazeFace
+  every 200 ms. Film grain follows the reference shader; .cube LUTs are 8-bit 3D textures.

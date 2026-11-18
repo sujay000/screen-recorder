@@ -116,7 +116,7 @@ export async function exportProject(
     if (!ctx) throw new Error('WebGPU is not available for export (OffscreenCanvas webgpu context).');
     compositor.configure(ctx);
     const renderer = new FrameRenderer(scene, compositor, cursors, { fps: settings.fps, motionBlurTaps: EXPORT_MOTION_BLUR_TAPS, motionBlurEnabled: true });
-    source = new FrameSources(compositor, video, opts.camera);
+    source = new FrameSources(compositor, video, opts.camera, () => scene.project.config.camera.layout === 'cutout');
     for (let f = 0; f < frames; f++) {
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError');
       if (encodeError) throw encodeError;

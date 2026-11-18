@@ -39,7 +39,7 @@ export class Player {
     private readonly mediaBase: string,
   ) {
     compositor.configure(ctx);
-    this.frames = new FrameSources(compositor, video, camera);
+    this.frames = new FrameSources(compositor, video, camera, () => this.scene.project.config.camera.layout === 'cutout');
     this.renderer = this.makeRenderer();
   }
 

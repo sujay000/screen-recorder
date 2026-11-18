@@ -120,7 +120,7 @@ export class EditorController {
     const key = cursorModelKey(this.project, this.opened.hoverChangeTimes);
     const reuse = this.scene && key === this.cursorKey ? this.scene.cursor : undefined;
     this.cursorKey = key;
-    return new Scene(this.project, { hasCamera: this.camera !== null, hoverChangeTimes: this.opened.hoverChangeTimes, faceTrack: this.opened.faceTrack, cursor: reuse });
+    return new Scene(this.project, { hasCamera: this.camera !== null, hoverChangeTimes: this.opened.hoverChangeTimes, faceTrack: this.opened.faceTrack, cameraAspectRatio: this.camera ? this.camera.width / this.camera.height : undefined, cursor: reuse });
   }
 
   // ---- Preview canvas ----

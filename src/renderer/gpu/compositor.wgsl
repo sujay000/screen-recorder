@@ -59,7 +59,8 @@ struct Params {
   cameraLutIntensity: f32,   // 0 = no LUT
   _pad3: f32,
   cameraFocus: vec2f,        // point of the webcam frame (0..1) kept centred when cropping
-  _pad4: vec2f,
+  cameraCutout: f32,         // 1: show only the person (alpha from cameraMask)
+  _pad4: f32,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -69,6 +70,7 @@ struct Params {
 @group(0) @binding(4) var bgTex: texture_2d<f32>;
 @group(0) @binding(5) var cameraTex: texture_2d<f32>;
 @group(0) @binding(6) var cameraLut: texture_3d<f32>;
+@group(0) @binding(7) var cameraMask: texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) pos: vec4f,
@@ -328,7 +330,46 @@ fn cameraSample(p: vec2f, rect: vec4f) -> vec4f {
     uv.y = start + uv.y * span;
   }
   let c = textureSampleLevel(cameraTex, linearSampler, uv, 0.0);
-  return toBlurLinear(vec4f(c.rgb, 1.0)) * cov;
+  var alpha = cov;
+  if (P.cameraCutout > 0.5) { alpha = alpha * personAlpha(uv); }
+  return toBlurLinear(vec4f(c.rgb, 1.0)) * alpha;
+}
+
+// Cutout: soft person mask (edge falloff 0.2, like the reference's camera background default).
+fn personAlpha(uv: vec2f) -> f32 {
+  return smoothstep(0.4, 0.6, textureSampleLevel(cameraMask, linearSampler, uv, 0.0).r);
+}
+
+// Webcam-frame uv at a stage point, with the same crop and mirror as cameraSample.
+fn cameraUv(p: vec2f, rect: vec4f) -> vec2f {
+  var uv = clamp((p - rect.xy) / rect.zw, vec2f(0.0), vec2f(1.0));
+  if (P.cameraMirror > 0.5) { uv.x = 1.0 - uv.x; }
+  let rectAspect = rect.z / max(rect.w, 1e-4);
+  let texAspect = P.cameraSize.x / max(P.cameraSize.y, 1.0);
+  if (texAspect > rectAspect) {
+    let span = rectAspect / texAspect;
+    uv.x = clamp(P.cameraFocus.x - span * 0.5, 0.0, 1.0 - span) + uv.x * span;
+  } else {
+    let span = texAspect / rectAspect;
+    uv.y = clamp(P.cameraFocus.y - span * 0.5, 0.0, 1.0 - span) + uv.y * span;
+  }
+  return uv;
+}
+
+// Shadow of the cut-out person: their silhouette, offset like the screen shadow and blurred.
+fn cutoutShadowMask(p: vec2f) -> f32 {
+  let rect = P.cameraNow;
+  let blur = max(rect.w * 0.03, 2.0);
+  let q = p - P.shadowOffset * 0.5;
+  var acc = 0.0;
+  for (var i = 0; i < 9; i++) {
+    let a = f32(i) * 0.6981317;
+    let o = select(vec2f(cos(a), sin(a)) * blur, vec2f(0.0), i == 8);
+    let s = q + o;
+    if (s.x < rect.x || s.y < rect.y || s.x > rect.x + rect.z || s.y > rect.y + rect.w) { continue; }
+    acc += personAlpha(cameraUv(s, rect));
+  }
+  return smoothstep(0.0, 0.75, acc / 9.0);
 }
 
 // ---- Webcam grading: 3D LUT and film grain (reference applyFilmGrain, B39:10117-10260) -----
@@ -527,7 +568,8 @@ fn fs(in: VsOut) -> @location(0) vec4f {
     color = over(cursorLayer(p, in.pos.xy), color);
   }
   if (P.drawMode != 1.0 && P.hasCamera > 0.5 && P.cameraOpacity > 0.001) {
-    color = shadowOver(color, rectShadowMask(p, P.cameraNow, P.cameraRadius) * P.cameraOpacity);
+    let camShadow = select(rectShadowMask(p, P.cameraNow, P.cameraRadius), cutoutShadowMask(p), P.cameraCutout > 0.5);
+    color = shadowOver(color, camShadow * P.cameraOpacity);
     color = over(finishCamera(cameraLayer(p, in.pos.xy), in.pos.xy), color);
   }
   var outc = fromBlurLinear(color);

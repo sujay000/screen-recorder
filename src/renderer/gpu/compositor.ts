@@ -11,7 +11,7 @@ import overlaySource from './overlay.wgsl';
 import type { FrameInputs, LoupeInputs, RectV } from '../../core/scene/frame-inputs';
 import { squircleLutCached } from '../../core/geometry/squircle';
 
-const PARAM_FLOATS = 164;
+const PARAM_FLOATS = 164; // multiple of 4
 const LOUPE_PARAM_FLOATS = 28;
 
 interface Pipelines {
@@ -56,6 +56,8 @@ export class Compositor {
   private cameraTex: GPUTexture | null = null;
   private overlayTex: GPUTexture | null = null;
   private cameraLutTex: GPUTexture | null = null;
+  private cameraMaskTex: GPUTexture | null = null;
+  private hasCameraMask = false;
   private noLutTex: GPUTexture | null = null;
   private hasOverlay = false;
   private hasCameraFrame = false;
@@ -169,6 +171,17 @@ export class Compositor {
     this.device.queue.writeTexture({ texture: this.cameraLutTex }, rgba, { bytesPerRow: n * 4, rowsPerImage: n }, [n, n, n]);
   }
 
+  // Person mask for the cutout layout (0..255 per pixel), or null for none.
+  setCameraMask(mask: { width: number; height: number; data: Uint8Array<ArrayBuffer> } | null): void {
+    this.hasCameraMask = mask !== null;
+    if (!mask) return;
+    if (!this.cameraMaskTex || this.cameraMaskTex.width !== mask.width || this.cameraMaskTex.height !== mask.height) {
+      this.cameraMaskTex?.destroy();
+      this.cameraMaskTex = this.device.createTexture({ size: [mask.width, mask.height], format: 'r8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    }
+    this.device.queue.writeTexture({ texture: this.cameraMaskTex }, mask.data, { bytesPerRow: mask.width }, [mask.width, mask.height]);
+  }
+
   private lutView(): GPUTextureView {
     if (this.cameraLutTex) return this.cameraLutTex.createView();
     this.noLutTex ??= this.device.createTexture({ size: [1, 1, 1], dimension: '3d', format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING });
@@ -258,6 +271,7 @@ export class Compositor {
         { binding: 4, resource: this.bgTex.createView() },
         { binding: 5, resource: (this.cameraTex ?? this.bgTex).createView() },
         { binding: 6, resource: this.lutView() },
+        { binding: 7, resource: (this.cameraMaskTex ?? this.bgTex).createView() },
       ],
     });
     this.fullScreenPass(enc, pipeline, bind, target, load);
@@ -309,7 +323,7 @@ export class Compositor {
       d.set([this.cameraTex.width, this.cameraTex.height, 0, 0], 120);
       d.set(squircleLutCached(cam.now.width, cam.now.height, cam.radius), 140);
       d.set([cam.grain, cam.grainSeed, this.cameraLutTex ? cam.lutIntensity : 0, 0], 156);
-      d.set([...cam.focus, 0, 0], 160);
+      d.set([...cam.focus, cam.cutout && this.hasCameraMask && this.cameraMaskTex ? 1 : 0, 0], 160);
     }
     d.set(squircleLutCached(f.screenNow.width, f.screenNow.height, f.screenRadius), 124);
     this.device.queue.writeBuffer(buffer, 0, d);

@@ -33,6 +33,7 @@ export interface SceneOptions {
   hasCamera: boolean;
   hoverChangeTimes?: number[];
   faceTrack?: FaceSample[] | null;
+  cameraAspectRatio?: number; // webcam frame width / height
   // Reuse a cursor model built for the same cursor settings (planning the path is the slow part,
   // and zoom or style edits do not change it).
   cursor?: CursorModel;
@@ -64,7 +65,7 @@ export class Scene {
       avoidEmptyZoomArea: cfg.output.avoidEmptyZoomArea,
       camera:
         opts.hasCamera && !cfg.camera.hide
-          ? { layout: cfg.camera.layout, sizeRatio01: cfg.camera.sizeRatio01, paddingRatio01: 0.5, aspectRatio: cfg.camera.aspectRatio, position01: cfg.camera.position01, zoomedScale: 0.8 }
+          ? { layout: cfg.camera.layout, sourceAspectRatio: opts.cameraAspectRatio, sizeRatio01: cfg.camera.sizeRatio01, paddingRatio01: 0.5, aspectRatio: cfg.camera.aspectRatio, position01: cfg.camera.position01, zoomedScale: 0.8 }
           : null,
     });
     this.cursor = opts.cursor ?? new CursorModel(project, opts.hoverChangeTimes ?? []);
@@ -149,10 +150,13 @@ export class Scene {
     const focus = { focusX: face.x, focusY: face.y };
     if (mode === 'camera') return { rect: L.stage.raw, radius: 0, opacity: 1, ...focus };
     const rect = zoomed ? L.zoomedCameraRect : L.cameraRect;
+    const cutout = this.project.config.camera.layout === 'cutout';
     // Radius: the un-zoomed bubble's short side times the roundness, scaled with the bubble.
-    // A split-screen panel is square-cornered; its zoomed bubble is rounded like any bubble.
+    // A split-screen panel is square-cornered; its zoomed bubble is rounded like any bubble. A
+    // cutout has no corners at all.
     let radius = 0;
-    if (!L.split) radius = Math.min(L.cameraRect.width, L.cameraRect.height) * ratio * (rect.width / L.cameraRect.width);
+    if (cutout) radius = 0;
+    else if (!L.split) radius = Math.min(L.cameraRect.width, L.cameraRect.height) * ratio * (rect.width / L.cameraRect.width);
     else if (zoomed) radius = Math.min(rect.width, rect.height) * ratio;
     if (mode === 'screen') {
       const s = HIDDEN_CAMERA_SCALE;

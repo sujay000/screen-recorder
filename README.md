@@ -10,7 +10,8 @@ Features:
 - cursor smoothing, tilt and click effects
 - backgrounds: gradient, mesh, colour, blurred image
 - aspect ratio presets (16:9, 9:16, 1:1, 4:3)
-- webcam as a bubble or split screen, with camera-only / screen-only clips
+- webcam as a bubble, split screen or cutout (background removed), camera-only / screen-only
+  clips, face tracking, film grain and colour LUTs
 - trim, cut and speed per clip
 - keyboard shortcut keycaps
 - export to MP4 or GIF

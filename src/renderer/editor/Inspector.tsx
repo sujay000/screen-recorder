@@ -415,16 +415,36 @@ function CameraSection({ editor }: { editor: EditorController }) {
       </Row>
       {!cam.hide && (
         <>
-          <Row label="Layout" hint={cam.layout === 'split' ? 'Camera panel beside the screen; a bubble while zoomed' : 'Bubble over the screen'}>
+          <Row label="Layout" hint={cam.layout === 'split' ? 'Camera panel beside the screen; a bubble while zoomed' : cam.layout === 'cutout' ? 'You, without the background, on the bottom edge' : 'Bubble over the screen'}>
             <Segmented
               label="Camera layout"
               value={cam.layout}
               options={[
                 { value: 'overlay', label: 'Bubble' },
-                { value: 'split', label: 'Split screen' },
+                { value: 'split', label: 'Split' },
+                { value: 'cutout', label: 'Cutout' },
               ]}
               onChange={(v) => edit((cfg) => (cfg.camera.layout = v))}
             />
+          </Row>
+        </>
+      )}
+      {!cam.hide && cam.layout === 'cutout' && (
+        <>
+          <Row label="Position">
+            <Segmented
+              label="Cutout position"
+              value={cam.position01.x}
+              options={[
+                { value: 0, label: 'Left' },
+                { value: 0.5, label: 'Centre' },
+                { value: 1, label: 'Right' },
+              ]}
+              onChange={(v) => edit((cfg) => (cfg.camera.position01 = { x: v, y: 1 }))}
+            />
+          </Row>
+          <Row label="Size">
+            <Slider label="Cutout size" min={0.2} max={0.8} step={0.01} value={cam.sizeRatio01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v, f) => edit((cfg) => (cfg.camera.sizeRatio01 = v), f)} />
           </Row>
         </>
       )}

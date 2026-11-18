@@ -12,7 +12,8 @@ export interface LayoutInput {
   paddingRatio01: number;
   avoidEmptyZoomArea: boolean;
   camera: null | {
-    layout?: 'overlay' | 'split';
+    layout?: 'overlay' | 'split' | 'cutout';
+    sourceAspectRatio?: number; // webcam frame aspect, for the cutout
     sizeRatio01: number;
     paddingRatio01: number;
     aspectRatio: number;
@@ -67,8 +68,25 @@ export class Layout {
     this.split = null;
     this.zoomArea = this.stage.padByRatio(-input.paddingRatio01);
     this.initialScreenRect = input.avoidEmptyZoomArea ? this.source.cover(this.zoomArea) : this.source.fitInside(this.zoomArea, undefined, true);
+    if (input.camera?.layout === 'cutout') {
+      this.cameraRect = this.cutoutRectFor(1);
+      this.zoomedCameraRect = this.cutoutRectFor(input.camera.zoomedScale);
+      return;
+    }
     this.cameraRect = input.camera ? this.cameraRectFor(1, 1) : null;
     this.zoomedCameraRect = input.camera ? this.cameraRectFor(input.camera.zoomedScale, 0.5) : null;
+  }
+
+  // Cutout (po): the webcam at its own aspect, standing on the bottom edge of the stage, at the
+  // chosen horizontal position inside the padding.
+  private cutoutRectFor(scale: number): Rect {
+    const cam = this.input.camera!;
+    const w = this.stage.shortestSide * cam.sizeRatio01 * scale;
+    const padded = this.stage.padByRatio(-this.input.paddingRatio01);
+    const band = new Rect({ x: padded.x, y: this.stage.y, width: padded.width, height: this.stage.height });
+    return Rect.fromAspectRatio(cam.sourceAspectRatio ?? 1, { width: w })
+      .fitInside({ x: 0, y: 0, width: w, height: w })
+      .align(band, { x: cam.position01.x, y: 1 });
   }
 
 

@@ -147,9 +147,9 @@ export interface ProjectConfig {
   };
   // Keyboard shortcut keycaps at the bottom of the video (off by default, as in the reference).
   shortcuts: { enabled: boolean; showSingleLetters: boolean; sizeRatio: number };
-  // layout: where the webcam goes by default (a bubble over the screen, or its own panel beside
-  // it). Clips can override it with Slice.cameraLayout.
-  camera: { layout: 'overlay' | 'split'; hide: boolean; sizeRatio01: number; position01: Vec2; aspectRatio: number; borderRadiusRatio01: number; mirror: boolean; followFace: boolean; grain: number; lutPath: string | null; lutIntensity: number };
+  // layout: where the webcam goes by default (a bubble over the screen, its own panel beside it,
+  // or the person cut out of the background, standing on the bottom edge). Clips can override it with Slice.cameraLayout.
+  camera: { layout: 'overlay' | 'split' | 'cutout'; hide: boolean; sizeRatio01: number; position01: Vec2; aspectRatio: number; borderRadiusRatio01: number; mirror: boolean; followFace: boolean; grain: number; lutPath: string | null; lutIntensity: number };
   audio: { muteMicrophone: boolean; muteSystemAudio: boolean; volume: number };
 }
 
