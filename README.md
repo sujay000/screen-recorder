@@ -65,8 +65,8 @@ cut the selected clip · `←/→` step a frame (`Shift` for one second) · `Esc
   `resources\native\recorder.exe self-check --out %TEMP%\rc-check`. In about 2 seconds it
   tests monitor/DPI lookup, input hooks, cursor capture and file writing, and prints a JSON
   report.
-- **Logs**: `%APPDATA%\Recorder\logs\main.log` (app) and `recorder.log` inside each
-  `.recording` folder (native recorder).
+- **Logs**: `%APPDATA%\Recorder\logs\main.log` (app) and `recording\recorder.log` inside
+  each `.recording` folder (native recorder).
 - **"Cannot decode the screen video" (HEVC)**: very large displays (above 4096×2304) are
   recorded in HEVC. Install *HEVC Video Extensions* from the Microsoft Store.
 - Error messages in the app have **Copy** and **Details** buttons. Paste them into an issue.
