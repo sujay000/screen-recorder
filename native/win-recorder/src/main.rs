@@ -15,7 +15,13 @@ mod win;
 
 use std::path::PathBuf;
 
+pub enum Command {
+    Record,
+    SelfCheck,
+}
+
 pub struct Args {
+    pub command: Command,
     pub out: PathBuf,
     pub monitor: usize,
     /// A physical screen point inside the monitor to record; preferred over the index because
@@ -25,10 +31,11 @@ pub struct Args {
 
 fn parse_args() -> Result<Args, String> {
     let mut it = std::env::args().skip(1);
-    match it.next().as_deref() {
-        Some("record") => {}
-        _ => return Err("usage: recorder record --out <dir> [--monitor <index>]".into()),
-    }
+    let command = match it.next().as_deref() {
+        Some("record") => Command::Record,
+        Some("self-check") => Command::SelfCheck,
+        _ => return Err("usage: recorder record --out <dir> [--at <x>,<y> | --monitor <index>] | recorder self-check --out <dir>".into()),
+    };
     let mut out = None;
     let mut monitor = 0usize;
     let mut at = None;
@@ -44,7 +51,7 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other}")),
         }
     }
-    Ok(Args { out: out.ok_or("--out is required")?, monitor, at })
+    Ok(Args { command, out: out.ok_or("--out is required")?, monitor, at })
 }
 
 pub fn emit(event: &str, extra: serde_json::Value) {
@@ -67,7 +74,11 @@ fn main() {
     };
     #[cfg(windows)]
     {
-        if let Err(e) = win::record(&args) {
+        let result = match args.command {
+            Command::Record => win::record(&args),
+            Command::SelfCheck => win::selfcheck::run(&args.out),
+        };
+        if let Err(e) = result {
             emit("error", serde_json::json!({ "message": e }));
             std::process::exit(1);
         }

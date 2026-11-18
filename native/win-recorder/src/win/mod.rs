@@ -3,6 +3,7 @@
 mod clock;
 mod cursor;
 mod input;
+pub mod selfcheck;
 mod state;
 
 use crate::bundle::{self, DisplayInfo, SessionTimes, VIDEO_FILE};

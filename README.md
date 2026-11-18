@@ -12,6 +12,10 @@ re-implemented from verified specs of Screen Studio 4.1.0 (see `~/screen-recorde
 3. Press the red timer button to stop. The recording opens in the editor.
 4. Adjust zooms on the timeline, style in the right panel, then **Export** to MP4.
 
+If recording fails, run the native helper's self-check from a terminal in the unzipped folder:
+`resources\native\recorder.exe self-check --out %TEMP%\rc-check`. It tests monitor/DPI lookup, input
+hooks, cursor capture and file writing in about 2 seconds and prints a JSON report.
+
 Recordings are saved in `Videos\Recorder\*.recording`. Screen Studio projects (`.screenstudio`)
 open in the editor too.
 
