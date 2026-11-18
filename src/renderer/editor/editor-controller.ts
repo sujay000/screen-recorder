@@ -10,9 +10,10 @@ import { CursorImages } from '../media/cursor-images';
 import { type DemuxedVideo, demuxVideo } from '../media/video-track';
 import { type ExportProgress, type ExportSettings, exportProject } from '../export/exporter';
 import { exportGif } from '../export/gif-exporter';
-import { toast } from '../ui/overlay';
+import { dismissToast, toast } from '../ui/overlay';
 import { parseCube } from '../../core/color/cube-lut';
 import { analyseHovers } from '../media/hover-analysis';
+import { trackFaces } from '../media/face-tracking';
 import { debounce } from '../util';
 import { Player } from './player';
 
@@ -64,6 +65,31 @@ export class EditorController {
     return c;
   }
 
+  faceTracking: 'idle' | 'running' | 'done' | 'failed' = 'idle';
+
+  // Runs the face detector over the webcam once (when "Follow face" is first turned on), caches
+  // the result in the bundle and re-renders.
+  private async trackFacesIfNeeded(): Promise<void> {
+    if (!this.camera || !this.project.config.camera.followFace || this.opened.faceTrack || this.faceTracking === 'running') return;
+    this.faceTracking = 'running';
+    this.listeners.forEach((l) => l());
+    const progress = toast('Finding your face in the webcam…', { durationMs: Infinity });
+    try {
+      const samples = await trackFaces(this.camera, undefined, this.analysisAbort.signal);
+      await window.recorder.saveFaceTrack(this.project.path, samples);
+      this.opened.faceTrack = samples;
+      this.faceTracking = 'done';
+      this.changed(false);
+      if (samples.length === 0) toast('No face found in the webcam', { tone: 'error', description: 'The bubble stays centred.' });
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      this.faceTracking = 'failed';
+      toast('Face tracking failed', { tone: 'error', description: (err as Error).message });
+    } finally {
+      dismissToast(progress);
+    }
+  }
+
   hoverAnalysis: 'idle' | 'running' | 'done' | 'failed' = 'idle';
   private analysisAbort = new AbortController();
 
@@ -94,7 +120,7 @@ export class EditorController {
     const key = cursorModelKey(this.project, this.opened.hoverChangeTimes);
     const reuse = this.scene && key === this.cursorKey ? this.scene.cursor : undefined;
     this.cursorKey = key;
-    return new Scene(this.project, { hasCamera: this.camera !== null, hoverChangeTimes: this.opened.hoverChangeTimes, cursor: reuse });
+    return new Scene(this.project, { hasCamera: this.camera !== null, hoverChangeTimes: this.opened.hoverChangeTimes, faceTrack: this.opened.faceTrack, cursor: reuse });
   }
 
   // ---- Preview canvas ----
@@ -284,6 +310,7 @@ export class EditorController {
 
   private changed(final: boolean): void {
     void this.syncBackgroundImage();
+    void this.trackFacesIfNeeded();
     void this.syncCameraLut();
     this.scene = this.buildScene();
     this.player?.setScene(this.scene);

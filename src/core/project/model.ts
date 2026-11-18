@@ -149,7 +149,7 @@ export interface ProjectConfig {
   shortcuts: { enabled: boolean; showSingleLetters: boolean; sizeRatio: number };
   // layout: where the webcam goes by default (a bubble over the screen, or its own panel beside
   // it). Clips can override it with Slice.cameraLayout.
-  camera: { layout: 'overlay' | 'split'; hide: boolean; sizeRatio01: number; position01: Vec2; aspectRatio: number; borderRadiusRatio01: number; mirror: boolean; grain: number; lutPath: string | null; lutIntensity: number };
+  camera: { layout: 'overlay' | 'split'; hide: boolean; sizeRatio01: number; position01: Vec2; aspectRatio: number; borderRadiusRatio01: number; mirror: boolean; followFace: boolean; grain: number; lutPath: string | null; lutIntensity: number };
   audio: { muteMicrophone: boolean; muteSystemAudio: boolean; volume: number };
 }
 
@@ -212,7 +212,7 @@ export function defaultConfig(): ProjectConfig {
       },
     },
     shortcuts: { enabled: false, showSingleLetters: false, sizeRatio: 0.1 },
-    camera: { layout: 'overlay', hide: false, sizeRatio01: 0.5, position01: { x: 1, y: 1 }, aspectRatio: 1, borderRadiusRatio01: 0.15, mirror: false, grain: 0, lutPath: null, lutIntensity: 1 },
+    camera: { layout: 'overlay', hide: false, sizeRatio01: 0.5, position01: { x: 1, y: 1 }, aspectRatio: 1, borderRadiusRatio01: 0.15, mirror: false, followFace: false, grain: 0, lutPath: null, lutIntensity: 1 },
     audio: { muteMicrophone: false, muteSystemAudio: false, volume: 1 },
   };
 }

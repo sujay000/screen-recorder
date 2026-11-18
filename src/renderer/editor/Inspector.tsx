@@ -463,6 +463,9 @@ function CameraSection({ editor }: { editor: EditorController }) {
           <Row label="Mirror">
             <Switch label="Mirror camera" checked={cam.mirror} onChange={(v) => edit((cfg) => (cfg.camera.mirror = v))} />
           </Row>
+          <Row label="Follow face" hint={editor.faceTracking === 'running' ? 'Finding your face…' : 'Keeps your face centred in the bubble'}>
+            <Switch label="Follow face" checked={cam.followFace} onChange={(v) => edit((cfg) => (cfg.camera.followFace = v))} />
+          </Row>
           <Row label="Film grain">
             <Slider label="Film grain" min={0} max={1} step={0.05} value={cam.grain} format={(v) => (v === 0 ? 'Off' : `${Math.round(v * 100)}%`)} onChange={(v, f) => edit((cfg) => (cfg.camera.grain = v), f)} />
           </Row>

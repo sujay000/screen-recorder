@@ -7,6 +7,7 @@ import { decimate, groupAt, groupSamples, isInInstantSnapWindow, loupeZoomAt, ty
 import { type ResolvedSpringConfig, SPRING_PRESETS, resolveSpring } from '../animation/spring';
 import { CursorModel } from '../cursor/cursor';
 import { ShortcutOverlay } from '../keyboard/shortcuts';
+import { faceAt, type FaceSample } from '../camera/face-track';
 import type { MouseEvent, Project, Zoom } from '../project/model';
 import type { Vec2 } from '../geometry/rect';
 import type { FrameStyle, LoupeStyle } from './frame-style';
@@ -14,6 +15,7 @@ import type { FrameStyle, LoupeStyle } from './frame-style';
 const INSTANT = resolveSpring(SPRING_PRESETS.instant);
 const FADE = resolveSpring(SPRING_PRESETS.medium);
 const TYPING_FADE = resolveSpring(SPRING_PRESETS.typingFade);
+const FACE_FOLLOW = resolveSpring(SPRING_PRESETS.smooth);
 const TILT_ROTATION = resolveSpring({ stiffness: 120, damping: 8, mass: 1 });
 const FOLLOW_ROTATION = resolveSpring({ stiffness: 320, damping: 28, mass: 1 });
 const PRESS_SCALE = 0.9;
@@ -30,6 +32,7 @@ const LOUPE_HIDDEN: LoupeStyle = { x01: 0.5, y01: 0.5, radius: 0, zoom: 1, bevel
 export interface SceneOptions {
   hasCamera: boolean;
   hoverChangeTimes?: number[];
+  faceTrack?: FaceSample[] | null;
   // Reuse a cursor model built for the same cursor settings (planning the path is the slow part,
   // and zoom or style edits do not change it).
   cursor?: CursorModel;
@@ -45,6 +48,7 @@ export class Scene {
   readonly layout: Layout;
   readonly cursor: CursorModel;
   readonly shortcuts: ShortcutOverlay;
+  private readonly faceTrack: FaceSample[] | null;
   private decimated: MouseEvent[];
   private zoomGroups = new Map<string, MovementGroup[]>();
   private restGroups: MovementGroup[];
@@ -64,6 +68,7 @@ export class Scene {
           : null,
     });
     this.cursor = opts.cursor ?? new CursorModel(project, opts.hoverChangeTimes ?? []);
+    this.faceTrack = cfg.camera.followFace ? (opts.faceTrack ?? null) : null;
     this.shortcuts = new ShortcutOverlay(project.recording.keystrokes, project.recording.mouseEvents, project.slices, cfg.shortcuts);
     this.decimated = decimate(this.cursor.events, 10);
     const restSamples = this.decimated.map((e) => ({ t: e.recordingTimeMs, x: e.x, y: e.y }));
@@ -140,7 +145,9 @@ export class Scene {
     if (!L.cameraRect || !L.zoomedCameraRect) return null;
     const ratio = this.project.config.camera.borderRadiusRatio01;
     const mode = this.cursor.timeMap.sliceAtSource(sourceT)?.cameraLayout ?? 'default';
-    if (mode === 'camera') return { rect: L.stage.raw, radius: 0, opacity: 1 };
+    const face = this.faceTrack ? faceAt(this.faceTrack, sourceT) : { x: 0.5, y: 0.5 };
+    const focus = { focusX: face.x, focusY: face.y };
+    if (mode === 'camera') return { rect: L.stage.raw, radius: 0, opacity: 1, ...focus };
     const rect = zoomed ? L.zoomedCameraRect : L.cameraRect;
     // Radius: the un-zoomed bubble's short side times the roundness, scaled with the bubble.
     // A split-screen panel is square-cornered; its zoomed bubble is rounded like any bubble.
@@ -150,9 +157,9 @@ export class Scene {
     if (mode === 'screen') {
       const s = HIDDEN_CAMERA_SCALE;
       const hidden = { x: rect.x + (rect.width * (1 - s)) / 2, y: rect.y + (rect.height * (1 - s)) / 2, width: rect.width * s, height: rect.height * s };
-      return { rect: hidden, radius: radius * s, opacity: 0 };
+      return { rect: hidden, radius: radius * s, opacity: 0, ...focus };
     }
-    return { rect: rect.raw, radius, opacity: 1 };
+    return { rect: rect.raw, radius, opacity: 1, ...focus };
   }
 
   restingFocus01(sourceT: number): Vec2 {
@@ -219,6 +226,9 @@ export class Scene {
           return FADE;
         case 'csc':
           return cursorSpring;
+        case 'kfx':
+        case 'kfy':
+          return FACE_FOLLOW;
         case 'crot':
           return cfg.cursor.rotationMode === 'directional' ? FOLLOW_ROTATION : TILT_ROTATION;
         default:

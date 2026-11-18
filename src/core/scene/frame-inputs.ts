@@ -48,7 +48,7 @@ export interface FrameInputs {
   clickStyle: 'none' | 'circle' | 'ripple';
   ripplePull01: number;
   loupe: LoupeInputs | null;
-  camera: null | { now: RectV; before: RectV; radius: number; opacity: number; mirror: boolean; grain: number; grainSeed: number; lutIntensity: number };
+  camera: null | { now: RectV; before: RectV; radius: number; opacity: number; mirror: boolean; focus: [number, number]; grain: number; grainSeed: number; lutIntensity: number };
 }
 
 // Glass loupe in screen-video pixels (the reference does its lens math in video pixels, and its
@@ -249,6 +249,7 @@ function cameraInputs(scene: Scene, now: FrameStyle, prev: FrameStyle, strength:
     radius: Math.max(0, cam.radius),
     opacity: Math.min(1, cam.opacity),
     mirror: cfg.mirror,
+    focus: [Math.min(1, Math.max(0, cam.focusX)), Math.min(1, Math.max(0, cam.focusY))],
     grain: Math.max(0, cfg.grain),
     grainSeed,
     lutIntensity: cfg.lutPath ? Math.min(1, Math.max(0, cfg.lutIntensity)) : 0,

@@ -19,6 +19,7 @@ const api: RecorderApi = {
   exportClose: (h, discard) => ipcRenderer.invoke(IPC.exportClose, h, discard),
   revealFile: (p) => ipcRenderer.invoke(IPC.revealFile, p),
   saveHoverChanges: (b, times) => ipcRenderer.invoke(IPC.saveHoverChanges, b, times),
+  saveFaceTrack: (b, s) => ipcRenderer.invoke(IPC.saveFaceTrack, b, s),
   chooseBackgroundImage: (b) => ipcRenderer.invoke(IPC.chooseBackgroundImage, b),
   chooseCameraLut: (b) => ipcRenderer.invoke(IPC.chooseCameraLut, b),
   onRecorderStatus: (cb) => {

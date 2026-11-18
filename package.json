@@ -53,6 +53,7 @@
     "asar": true
   },
   "devDependencies": {
+    "@mediapipe/tasks-vision": "^0.10.21",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

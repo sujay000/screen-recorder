@@ -56,12 +56,15 @@ export function dismissToast(id: number): void {
   emit();
 }
 
-export function toast(title: string, opts: { description?: string; detail?: string; tone?: Toast['tone']; durationMs?: number } = {}): void {
+// Returns the toast id (for dismissToast). durationMs: Infinity keeps it until dismissed.
+export function toast(title: string, opts: { description?: string; detail?: string; tone?: Toast['tone']; durationMs?: number } = {}): number {
   const t: Toast = { id: nextId++, title, description: opts.description, detail: opts.detail, tone: opts.tone ?? 'default' };
   toasts = [...toasts, t].slice(-5);
   emit();
   // Errors stay until dismissed.
-  if (t.tone !== 'error') setTimeout(() => dismissToast(t.id), opts.durationMs ?? 3500);
+  const duration = opts.durationMs ?? 3500;
+  if (t.tone !== 'error' && Number.isFinite(duration)) setTimeout(() => dismissToast(t.id), duration);
+  return t.id;
 }
 
 export function toastError(title: string, err: unknown): void {

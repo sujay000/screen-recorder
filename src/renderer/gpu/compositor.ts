@@ -11,7 +11,7 @@ import overlaySource from './overlay.wgsl';
 import type { FrameInputs, LoupeInputs, RectV } from '../../core/scene/frame-inputs';
 import { squircleLutCached } from '../../core/geometry/squircle';
 
-const PARAM_FLOATS = 160;
+const PARAM_FLOATS = 164;
 const LOUPE_PARAM_FLOATS = 28;
 
 interface Pipelines {
@@ -64,11 +64,15 @@ export class Compositor {
   private data = new Float32Array(PARAM_FLOATS);
   private loupeData = new Float32Array(LOUPE_PARAM_FLOATS);
 
+  // Which GPU (or software adapter) is in use, for logs and the self-test report.
+  static adapterInfo = '';
+
   static async create(): Promise<Compositor> {
     if (!navigator.gpu) throw new Error('WebGPU is not available on this system.');
     // Fall back to the software adapter on machines without a usable GPU (VMs, CI runners).
     const adapter = (await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })) ?? (await navigator.gpu.requestAdapter({ forceFallbackAdapter: true }));
-    if (!adapter) throw new Error('No WebGPU adapter found. Update your graphics driver.');
+    if (!adapter) throw new Error('No WebGPU adapter found. Update your graphics driver. (On a machine without a GPU, start the app with RECORDER_SOFTWARE_GPU=1.)');
+    Compositor.adapterInfo = `${adapter.info.vendor || 'unknown vendor'} ${adapter.info.architecture || ''} ${adapter.info.description || ''}`.trim();
     const device = await adapter.requestDevice();
     const format = navigator.gpu.getPreferredCanvasFormat();
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
@@ -305,6 +309,7 @@ export class Compositor {
       d.set([this.cameraTex.width, this.cameraTex.height, 0, 0], 120);
       d.set(squircleLutCached(cam.now.width, cam.now.height, cam.radius), 140);
       d.set([cam.grain, cam.grainSeed, this.cameraLutTex ? cam.lutIntensity : 0, 0], 156);
+      d.set([...cam.focus, 0, 0], 160);
     }
     d.set(squircleLutCached(f.screenNow.width, f.screenNow.height, f.screenRadius), 124);
     this.device.queue.writeBuffer(buffer, 0, d);

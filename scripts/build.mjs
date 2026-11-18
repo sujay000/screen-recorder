@@ -13,4 +13,7 @@ await Promise.all([
 mkdirSync('dist/renderer', { recursive: true });
 cpSync('src/renderer/index.html', 'dist/renderer/index.html');
 cpSync('src/renderer/styles.css', 'dist/renderer/styles.css');
+// MediaPipe runtime and models for webcam face tracking and cutout (Apache-2.0, run locally).
+cpSync('node_modules/@mediapipe/tasks-vision/wasm', 'dist/renderer/mediapipe/wasm', { recursive: true });
+cpSync('assets/models', 'dist/renderer/mediapipe', { recursive: true });
 console.log('built dist/');

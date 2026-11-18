@@ -6,15 +6,24 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { openProject, readOwnHoverTimes, readReferenceHoverTimes, saveOwnHoverTimes, saveProject } from '../node/bundle';
+import { openProject, readFaceTrack, readOwnHoverTimes, readReferenceHoverTimes, saveFaceTrack, saveOwnHoverTimes, saveProject } from '../node/bundle';
 import { addMediaTrack } from '../node/recording-writer';
 import type { Project } from '../core/project/model';
 import { IPC, type MediaTrackInfo, type DisplayInfo, type OpenedProject, type RecorderStatus } from '../shared/ipc';
 import { appendTo, log, mainLogPath } from './log';
 import { NativeRecorder, helperPath } from './native-recorder';
 
-// Software WebGPU for machines without a GPU (CI, VMs). Opt-in, because it is slow.
-if (process.env.RECORDER_SOFTWARE_GPU === '1') app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+// Software WebGPU for machines without a GPU (CI runners, VMs). Opt-in, because it is slow:
+// Chromium's SwiftShader (software Vulkan) adapter, with the GPU blocklist ignored so the GPU
+// process starts at all on a machine with no real GPU.
+if (process.env.RECORDER_SOFTWARE_GPU === '1') {
+  app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+  app.commandLine.appendSwitch('enable-unsafe-webgpu');
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+  app.commandLine.appendSwitch('enable-features', 'Vulkan');
+  app.commandLine.appendSwitch('use-vulkan', 'swiftshader');
+  app.commandLine.appendSwitch('use-webgpu-adapter', 'swiftshader');
+}
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
@@ -44,7 +53,7 @@ function open(bundlePath: string): OpenedProject {
   const own = reference.length ? null : readOwnHoverTimes(bundlePath);
   const hasHoverData = reference.length > 0 || own !== null || fs.existsSync(path.join(bundlePath, 'cache', 'cursor-hover_v3-all'));
   app.addRecentDocument(bundlePath);
-  return { project, hoverChangeTimes: reference.length ? reference : own ?? [], hasHoverData, mediaBase: `media://${id}/` };
+  return { project, hoverChangeTimes: reference.length ? reference : own ?? [], hasHoverData, mediaBase: `media://${id}/`, faceTrack: readFaceTrack(bundlePath) };
 }
 
 function sendStatus(s: RecorderStatus): void {
@@ -68,10 +77,14 @@ function createWindow(): void {
   window.webContents.on('console-message', (_e, level, message) => level >= 2 && log(level >= 3 ? 'error' : 'warn', `Page: ${message}`));
 }
 
+const MEDIAPIPE_HOST = 'mediapipe';
+const mediapipeRoot = () => path.join(__dirname, '..', 'renderer', 'mediapipe');
+
 function registerMediaProtocol(): void {
   protocol.handle('media', (req) => {
     const url = new URL(req.url);
-    const root = allowedRoots.get(url.hostname);
+    // media://mediapipe/… serves the bundled ML runtime and models (the page cannot fetch file://).
+    const root = url.hostname === MEDIAPIPE_HOST ? mediapipeRoot() : allowedRoots.get(url.hostname);
     if (!root) return new Response('Not found', { status: 404 });
     const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
     const abs = path.resolve(root, rel);
@@ -206,6 +219,11 @@ function registerIpc(): void {
     const name = path.basename(r.filePaths[0]);
     fs.copyFileSync(r.filePaths[0], path.join(dir, name));
     return `luts/${name}`;
+  });
+  ipcMain.handle(IPC.saveFaceTrack, (_e, bundle: string, samples: unknown[]) => {
+    if (![...allowedRoots.values()].includes(path.join(bundle, 'recording'))) throw new Error(`Unknown recording ${bundle}`);
+    saveFaceTrack(bundle, samples as Parameters<typeof saveFaceTrack>[1]);
+    log('info', `Face tracking: ${samples.length} samples saved for ${bundle}`);
   });
   ipcMain.handle(IPC.saveHoverChanges, (_e, bundle: string, times: number[]) => {
     if (![...allowedRoots.values()].includes(path.join(bundle, 'recording'))) throw new Error(`Unknown recording ${bundle}`);

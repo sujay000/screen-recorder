@@ -6,6 +6,7 @@ import type { BundleReader } from '../core/project/loader';
 import { loadRecording } from '../core/project/loader';
 import { defaultConfig, defaultSlices, LOUPE_DEFAULTS, type Project, type ProjectConfig, type Slice, type Zoom } from '../core/project/model';
 import { generateAutoZooms } from '../core/camera/zoom';
+import type { FaceSample } from '../core/camera/face-track';
 
 export const EDITOR_FILE = 'recorder-project.json';
 
@@ -79,6 +80,21 @@ export function readReferenceHoverTimes(bundlePath: string, sessionStartsMs: num
 }
 
 const OWN_HOVER_CACHE = ['cache', 'recorder-hover.json'];
+const FACE_CACHE = ['cache', 'recorder-face.json'];
+
+// Webcam face positions found by our face tracker, or null if never computed.
+export function readFaceTrack(bundlePath: string): FaceSample[] | null {
+  const f = path.join(bundlePath, ...FACE_CACHE);
+  if (!fs.existsSync(f)) return null;
+  const j = JSON.parse(fs.readFileSync(f, 'utf8')) as { version: number; samples: FaceSample[] };
+  return j.version === 1 ? j.samples : null;
+}
+
+export function saveFaceTrack(bundlePath: string, samples: FaceSample[]): void {
+  const f = path.join(bundlePath, ...FACE_CACHE);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify({ version: 1, samples }));
+}
 
 // Hover times from this app's own detector (recording time), or null if never computed.
 export function readOwnHoverTimes(bundlePath: string): number[] | null {

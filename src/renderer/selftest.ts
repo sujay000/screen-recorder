@@ -2,8 +2,10 @@
 // the editor, exports it and reports timings and checks back to the main process.
 
 import type { EditorController } from './editor/editor-controller';
+import { Compositor } from './gpu/compositor';
 import type { OpenedProject } from '../shared/ipc';
 import { analyseHovers } from './media/hover-analysis';
+import { trackFaces } from './media/face-tracking';
 import { webcamMimeType } from './recording/use-recorder';
 import { demuxBytes, SequentialFrames } from './media/video-track';
 
@@ -17,6 +19,7 @@ export interface SelfTestJob {
   seekMs?: number;
   audioProbe?: boolean; // record 3 s with MediaRecorder (as the Windows app does) and decode it
   hoverProbe?: boolean; // run our hover detector and compare with the reference app's cache
+  faceProbe?: boolean; // run the face tracker on the webcam and report what it found
   webcamProbe?: boolean; // record 3 s of video as MP4 with MediaRecorder (as the Windows webcam) and decode it
 }
 
@@ -46,6 +49,7 @@ export async function runSelfTest(job: SelfTestJob, open: (o: OpenedProject) => 
     const t0 = performance.now();
     const editor = await open(await window.recorder.openProject(job.bundle));
     result.openMs = Math.round(performance.now() - t0);
+    result.gpu = Compositor.adapterInfo;
     result.durationMs = editor.durationMs;
     result.zooms = editor.project.zooms.length;
     result.stage = editor.scene.layout.stage.raw;
@@ -55,6 +59,22 @@ export async function runSelfTest(job: SelfTestJob, open: (o: OpenedProject) => 
     if (job.screenshot) {
       editor.seek(job.seekMs ?? 4500);
       await settle(1200);
+      result.ok = true;
+      await window.recorder.reportSelfTest(result);
+      return;
+    }
+    if (job.faceProbe) {
+      if (!editor.camera) throw new Error('This recording has no webcam track.');
+      const t2 = performance.now();
+      const samples = await trackFaces(editor.camera);
+      result.faceMs = Math.round(performance.now() - t2);
+      result.faceSamples = samples.length;
+      result.webcamSeconds = +((editor.camera.samples.at(-1)!.timeMs - editor.camera.samples[0].timeMs) / 1000).toFixed(1);
+      const xs = samples.map((f) => f.x01);
+      const ys = samples.map((f) => f.y01);
+      result.faceX = [Math.min(...xs), Math.max(...xs)].map((v) => +v.toFixed(3));
+      result.faceY = [Math.min(...ys), Math.max(...ys)].map((v) => +v.toFixed(3));
+      await window.recorder.saveFaceTrack(editor.project.path, samples);
       result.ok = true;
       await window.recorder.reportSelfTest(result);
       return;

@@ -2,6 +2,7 @@
 // API on window.recorder; nothing else from Node is reachable from the page.
 
 import type { Project } from '../core/project/model';
+import type { FaceSample } from '../core/camera/face-track';
 
 export interface OpenedProject {
   project: Project;
@@ -10,6 +11,8 @@ export interface OpenedProject {
   hasHoverData: boolean;
   // media:// URL prefix for files inside <bundle>/recording/
   mediaBase: string;
+  // Webcam face positions, or null until the face tracker has run.
+  faceTrack: FaceSample[] | null;
 }
 
 export interface RecorderStatus {
@@ -49,6 +52,7 @@ export interface RecorderApi {
   revealFile(filePath: string): Promise<void>;
   // Hover-change times computed by this app's detector, cached in the bundle.
   saveHoverChanges(bundlePath: string, timesMs: number[]): Promise<void>;
+  saveFaceTrack(bundlePath: string, samples: FaceSample[]): Promise<void>;
   // Lets the user pick an image, copies it into recording/backgrounds/ and returns that relative path.
   chooseBackgroundImage(bundlePath: string): Promise<string | null>;
   // Copies a .cube colour LUT into the bundle; returns its path relative to recording/.
@@ -74,6 +78,7 @@ export const IPC = {
   exportClose: 'export:close',
   revealFile: 'shell:reveal',
   saveHoverChanges: 'project:save-hover',
+  saveFaceTrack: 'project:save-face-track',
   chooseBackgroundImage: 'project:choose-background',
   chooseCameraLut: 'editor:choose-camera-lut',
   selfTest: 'selftest:run',

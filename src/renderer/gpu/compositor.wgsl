@@ -58,6 +58,8 @@ struct Params {
   grainSeed: f32,
   cameraLutIntensity: f32,   // 0 = no LUT
   _pad3: f32,
+  cameraFocus: vec2f,        // point of the webcam frame (0..1) kept centred when cropping
+  _pad4: vec2f,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -312,12 +314,19 @@ fn cameraSample(p: vec2f, rect: vec4f) -> vec4f {
   var uv = clamp((p - rect.xy) / rect.zw, vec2f(0.0), vec2f(1.0));
   let rectAspect = rect.z / max(rect.w, 1e-4);
   let texAspect = P.cameraSize.x / max(P.cameraSize.y, 1.0);
-  if (texAspect > rectAspect) {
-    uv.x = 0.5 + (uv.x - 0.5) * rectAspect / texAspect;
-  } else {
-    uv.y = 0.5 + (uv.y - 0.5) * texAspect / rectAspect;
-  }
+  // Mirror within the bubble first, so the crop still frames the same part of the video.
   if (P.cameraMirror > 0.5) { uv.x = 1.0 - uv.x; }
+  // Cover-fit: crop the frame around the focus point (the face, with face tracking), staying
+  // inside the frame.
+  if (texAspect > rectAspect) {
+    let span = rectAspect / texAspect;
+    let start = clamp(P.cameraFocus.x - span * 0.5, 0.0, 1.0 - span);
+    uv.x = start + uv.x * span;
+  } else {
+    let span = texAspect / rectAspect;
+    let start = clamp(P.cameraFocus.y - span * 0.5, 0.0, 1.0 - span);
+    uv.y = start + uv.y * span;
+  }
   let c = textureSampleLevel(cameraTex, linearSampler, uv, 0.0);
   return toBlurLinear(vec4f(c.rgb, 1.0)) * cov;
 }

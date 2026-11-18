@@ -7,7 +7,8 @@ export interface FrameStyle {
   screen: RectLike;
   screenRoundness: number; // 1 = configured corner radius, 0 = square (split screen)
   // Webcam: radius in stage units, opacity 0 while hidden (it also shrinks to 0.9 then).
-  camera: { rect: RectLike; radius: number; opacity: number } | null;
+  // focusX/Y: point of the webcam frame (0..1) kept in view when the bubble crops it.
+  camera: { rect: RectLike; radius: number; opacity: number; focusX: number; focusY: number } | null;
   cursor: { x01: number; y01: number; opacity: number; scale: number; rotation: number; fadeBlur: number };
   background: { scale: number; originX: number; originY: number; blur: number };
   zoom: number;
@@ -61,6 +62,8 @@ export function flatten(s: FrameStyle): Record<string, number> {
     r.kh = s.camera.rect.height;
     r.kr = s.camera.radius;
     r.ko = s.camera.opacity;
+    r.kfx = s.camera.focusX;
+    r.kfy = s.camera.focusY;
   }
   return r;
 }
@@ -69,7 +72,7 @@ export function unflatten(r: Record<string, number>): FrameStyle {
   return {
     screen: { x: r.sx, y: r.sy, width: r.sw, height: r.sh },
     screenRoundness: r.sro,
-    camera: 'kx' in r ? { rect: { x: r.kx, y: r.ky, width: r.kw, height: r.kh }, radius: r.kr, opacity: r.ko } : null,
+    camera: 'kx' in r ? { rect: { x: r.kx, y: r.ky, width: r.kw, height: r.kh }, radius: r.kr, opacity: r.ko, focusX: r.kfx, focusY: r.kfy } : null,
     cursor: { x01: r.cx01, y01: r.cy01, opacity: r.cop, scale: r.csc, rotation: r.crot, fadeBlur: r.cblur },
     background: { scale: r.bgs, originX: r.bgx, originY: r.bgy, blur: r.bgb },
     zoom: r.zoom,
