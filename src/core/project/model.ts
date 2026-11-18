@@ -94,10 +94,10 @@ export interface GradientStop {
 }
 
 export interface BackgroundConfig {
-  type: 'color' | 'gradient' | 'image';
+  type: 'color' | 'gradient' | 'mesh' | 'image'; // mesh: 4 corner colours from gradient.stops
   color: string;
   gradient: { start: Vec2; end: Vec2; stops: GradientStop[] };
-  imagePath: string | null;
+  imagePath: string | null; // relative to recording/, e.g. backgrounds/photo.jpg
   blur: number; // 0..100
 }
 

@@ -19,7 +19,7 @@ struct Params {
   lightPos: vec2f,
   lightRadius: f32,
   shadowFalloff: f32,
-  bgType: f32,               // 0 color, 1 gradient, 2 image
+  bgType: f32,               // 0 color, 1 gradient, 2 image, 3 mesh
   bgStopCount: f32,
   bgBlur: f32,               // stage units
   bgScale: f32,
@@ -171,6 +171,23 @@ fn gradientAt(p01: vec2f) -> vec3f {
   return linearToSrgb(col);
 }
 
+// Mesh gradient: four corner colours blended in OKLab over a softly warped domain, for a
+// wallpaper-like background.
+fn meshAt(p01: vec2f) -> vec3f {
+  let w = vec2f(
+    p01.x + 0.08 * sin(p01.y * 5.0 + 1.3) + 0.04 * sin(p01.y * 11.0 + p01.x * 3.0),
+    p01.y + 0.08 * sin(p01.x * 4.0 + 0.7) + 0.04 * sin(p01.x * 9.0 - p01.y * 2.0));
+  let u = clamp(w, vec2f(0.0), vec2f(1.0));
+  let s = u * u * (3.0 - 2.0 * u);
+  let a = linearToOklab(P.bgStops[0].rgb);
+  let b = linearToOklab(P.bgStops[1].rgb);
+  let c = linearToOklab(P.bgStops[2].rgb);
+  let d = linearToOklab(P.bgStops[3].rgb);
+  let top = mix(a, b, s.x);
+  let bottom = mix(c, d, s.x);
+  return linearToSrgb(max(oklabToLinear(mix(top, bottom, s.y)), vec3f(0.0)));
+}
+
 fn sampleBackgroundImage(p: vec2f, blurUnits: f32) -> vec3f {
   // Cover fit, then the zoom-dependent scale about the zoom focus.
   let s = max(P.stageSize.x / P.bgImageSize.x, P.stageSize.y / P.bgImageSize.y);
@@ -196,7 +213,11 @@ fn sampleBackgroundImage(p: vec2f, blurUnits: f32) -> vec3f {
 
 fn background(p: vec2f) -> vec4f {
   var rgb = P.bgStops[0].rgb;
-  if (P.bgType > 1.5) {
+  if (P.bgType > 2.5) {
+    let origin = P.bgOrigin * P.stageSize;
+    let q = origin + (p - origin) / P.bgScale;
+    rgb = meshAt(q / P.stageSize);
+  } else if (P.bgType > 1.5) {
     rgb = sampleBackgroundImage(p, P.bgBlur);
   } else if (P.bgType > 0.5) {
     let origin = P.bgOrigin * P.stageSize;

@@ -49,6 +49,8 @@ export interface RecorderApi {
   revealFile(filePath: string): Promise<void>;
   // Hover-change times computed by this app's detector, cached in the bundle.
   saveHoverChanges(bundlePath: string, timesMs: number[]): Promise<void>;
+  // Lets the user pick an image, copies it into recording/backgrounds/ and returns that relative path.
+  chooseBackgroundImage(bundlePath: string): Promise<string | null>;
   onRecorderStatus(cb: (s: RecorderStatus) => void): () => void;
   // Test harness only (see main.ts runSelfTestIfRequested).
   onSelfTest(cb: (jobJson: string) => void): void;
@@ -70,6 +72,7 @@ export const IPC = {
   exportClose: 'export:close',
   revealFile: 'shell:reveal',
   saveHoverChanges: 'project:save-hover',
+  chooseBackgroundImage: 'project:choose-background',
   selfTest: 'selftest:run',
   selfTestResult: 'selftest:result',
 } as const;

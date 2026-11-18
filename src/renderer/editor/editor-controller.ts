@@ -104,6 +104,8 @@ export class EditorController {
       this.playback = { timeMs: t, playing: player.isPlaying };
       this.playbackListeners.forEach((l) => l());
     };
+    this.backgroundKey = null;
+    await this.syncBackgroundImage();
     const problems = await player.loadAudio();
     for (const p of problems) toast('Audio track skipped', { tone: 'error', description: p });
     await player.seek(this.playback.timeMs);
@@ -182,7 +184,35 @@ export class EditorController {
     this.updateZoom(id, { manualTargetPoint: { x: clamp((px - init.x) / init.width), y: clamp((py - init.y) / init.height) } });
   }
 
+  // Keeps the compositor's background texture in sync with the config.
+  private backgroundKey: string | null = null;
+  private async syncBackgroundImage(): Promise<void> {
+    const bg = this.project.config.styles.background;
+    const key = bg.type === 'image' && bg.imagePath ? bg.imagePath : null;
+    if (key === this.backgroundKey) return;
+    this.backgroundKey = key;
+    if (!key) return;
+    try {
+      const r = await fetch(this.opened.mediaBase + key.split('/').map(encodeURIComponent).join('/'));
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${key}`);
+      this.compositor.setBackgroundImage(await createImageBitmap(await r.blob()));
+      this.player?.setScene(this.scene);
+    } catch (err) {
+      toast('Background image could not be loaded', { tone: 'error', description: (err as Error).message });
+    }
+  }
+
+  async chooseBackgroundImage(): Promise<void> {
+    const rel = await window.recorder.chooseBackgroundImage(this.project.path);
+    if (!rel) return;
+    this.updateConfig((c) => {
+      c.styles.background.type = 'image';
+      c.styles.background.imagePath = rel;
+    });
+  }
+
   private changed(final: boolean): void {
+    void this.syncBackgroundImage();
     this.scene = this.buildScene();
     this.player?.setScene(this.scene);
     this.version++;

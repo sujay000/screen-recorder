@@ -26,7 +26,7 @@ export interface FrameInputs {
     falloff: number;
   };
   background: {
-    type: 'color' | 'gradient' | 'image';
+    type: 'color' | 'gradient' | 'mesh' | 'image';
     stops: { rgb: [number, number, number]; at: number }[]; // linear sRGB
     start: [number, number];
     end: [number, number];
@@ -135,7 +135,7 @@ export function buildFrameInputs(
 
   const bg = cfg.styles.background;
   const stops =
-    bg.type === 'gradient'
+    bg.type === 'gradient' || bg.type === 'mesh'
       ? bg.gradient.stops.map((s) => ({ rgb: srgbHexToLinear(s.color), at: s.at }))
       : [{ rgb: srgbHexToLinear(bg.color), at: 0 }];
   const userBlur = stage.width * (bg.blur / 100) * 0.05;

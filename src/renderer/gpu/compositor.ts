@@ -128,7 +128,7 @@ export class Compositor {
     d.set([...s.offset, s.blur, s.directional ? 1 : 0], 20);
     d.set([...s.light, s.lightRadius, s.falloff], 24);
     const bg = f.background;
-    d.set([bg.type === 'color' ? 0 : bg.type === 'gradient' ? 1 : 2, Math.min(8, bg.stops.length), bg.blur, bg.scale], 28);
+    d.set([{ color: 0, gradient: 1, image: 2, mesh: 3 }[bg.type], Math.min(8, bg.stops.length), bg.blur, bg.scale], 28);
     d.set([...bg.origin, ...bg.start], 32);
     d.set([...bg.end, ...this.bgSize], 36);
     bg.stops.slice(0, 8).forEach((st, i) => d.set([...st.rgb, st.at], 40 + i * 4));

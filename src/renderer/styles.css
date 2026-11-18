@@ -288,3 +288,6 @@ h1, h2, h3, p { margin: 0; }
 .toast-detail { margin-top: 6px; }
 .toast-detail summary { color: var(--muted); font-size: 11px; cursor: pointer; }
 .toast-detail pre { margin: 6px 0 0; max-height: 180px; overflow: auto; font-size: 11px; line-height: 1.4; color: var(--text-2); white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+
+.inspector .row-control .segmented button { font-size: 11px; padding: 0 2px; }
+.inspector .row:has(.segmented) .row-control { max-width: 200px; }

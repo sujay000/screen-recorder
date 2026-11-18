@@ -184,6 +184,17 @@ function registerIpc(): void {
     if (discard && p) fs.rmSync(p, { force: true });
   });
   ipcMain.handle(IPC.revealFile, (_e, p: string) => shell.showItemInFolder(p));
+  ipcMain.handle(IPC.chooseBackgroundImage, async (_e, bundle: string) => {
+    const recDir = path.join(bundle, 'recording');
+    if (![...allowedRoots.values()].includes(recDir)) throw new Error(`Unknown recording ${bundle}`);
+    const r = await dialog.showOpenDialog(window!, { title: 'Background image', properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const dir = path.join(recDir, 'backgrounds');
+    fs.mkdirSync(dir, { recursive: true });
+    const name = path.basename(r.filePaths[0]);
+    fs.copyFileSync(r.filePaths[0], path.join(dir, name));
+    return `backgrounds/${name}`;
+  });
   ipcMain.handle(IPC.saveHoverChanges, (_e, bundle: string, times: number[]) => {
     if (![...allowedRoots.values()].includes(path.join(bundle, 'recording'))) throw new Error(`Unknown recording ${bundle}`);
     saveOwnHoverTimes(bundle, times);

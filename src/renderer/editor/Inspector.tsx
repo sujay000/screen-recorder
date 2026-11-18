@@ -21,6 +21,27 @@ const GRADIENTS: [string, string][] = [
   ['#8e2de2', '#4a00e0'],
 ];
 const COLORS = ['#0b0b0d', '#ffffff', '#f4f1ea', '#1f6feb', '#7c3aed', '#16a34a'];
+// Four corner colours each, for the mesh (wallpaper-style) backgrounds.
+const MESHES: [string, string, string, string][] = [
+  ['#ff9a8b', '#ff6a88', '#7f7fd5', '#86a8e7'],
+  ['#0f2027', '#203a43', '#2c5364', '#0b8793'],
+  ['#fbd786', '#f7797d', '#c6ffdd', '#6dd5ed'],
+  ['#1a2a6c', '#b21f1f', '#fdbb2d', '#22c1c3'],
+  ['#3a1c71', '#d76d77', '#ffaf7b', '#ff9966'],
+  ['#e0eafc', '#cfdef3', '#a1c4fd', '#c2e9fb'],
+  ['#0b0b0d', '#2b2d42', '#5c5f8a', '#141622'],
+  ['#134e5e', '#71b280', '#a8e063', '#56ab2f'],
+  ['#c94b4b', '#4b134f', '#ee0979', '#ff6a00'],
+  ['#f5f7fa', '#c3cfe2', '#e2d1c3', '#fdfcfb'],
+];
+const meshCss = (m: string[]) => `radial-gradient(at 0% 0%, ${m[0]}, transparent 70%), radial-gradient(at 100% 0%, ${m[1]}, transparent 70%), radial-gradient(at 0% 100%, ${m[2]}, transparent 70%), radial-gradient(at 100% 100%, ${m[3]}, transparent 70%), ${m[0]}`;
+const ASPECTS: { value: string; label: string; ratio: 'auto' | number }[] = [
+  { value: 'auto', label: 'Auto', ratio: 'auto' },
+  { value: '16:9', label: '16:9', ratio: 16 / 9 },
+  { value: '9:16', label: '9:16', ratio: 9 / 16 },
+  { value: '1:1', label: '1:1', ratio: 1 },
+  { value: '4:3', label: '4:3', ratio: 4 / 3 },
+];
 
 const CURSOR_SMOOTHING: { value: string; label: string; spring: SpringConfig | null }[] = [
   { value: 'default', label: 'Default', spring: SPRING_PRESETS.default },
@@ -86,57 +107,100 @@ export function Inspector({ editor, selectedZoom, onDeselect }: { editor: Editor
             {tab === 'background' && (
               <>
                 <h3>Background</h3>
-                <div className="swatch-grid">
-                  {GRADIENTS.map(([a, b]) => {
-                    const active = c.styles.background.type === 'gradient' && c.styles.background.gradient.stops[0]?.color === a && c.styles.background.gradient.stops[1]?.color === b;
-                    return (
+                <Segmented
+                  label="Background type"
+                  value={c.styles.background.type}
+                  onChange={(v) =>
+                    edit((cfg) => {
+                      cfg.styles.background.type = v;
+                      // A mesh needs four colours, a gradient at least two.
+                      if (v === 'mesh' && cfg.styles.background.gradient.stops.length < 4) cfg.styles.background.gradient.stops = MESHES[0].map((color, i) => ({ color, at: i / 3 }));
+                      if (v === 'gradient' && cfg.styles.background.gradient.stops.length !== 2) cfg.styles.background.gradient.stops = GRADIENTS[0].map((color, i) => ({ color, at: i }));
+                    })
+                  }
+                  options={[
+                    { value: 'gradient', label: 'Gradient' },
+                    { value: 'mesh', label: 'Mesh' },
+                    { value: 'color', label: 'Colour' },
+                    { value: 'image', label: 'Image' },
+                  ]}
+                />
+                <div style={{ height: 10 }} />
+                {c.styles.background.type === 'gradient' && (
+                  <div className="swatch-grid">
+                    {GRADIENTS.map(([a, b]) => {
+                      const active = c.styles.background.gradient.stops[0]?.color === a && c.styles.background.gradient.stops[1]?.color === b;
+                      return (
+                        <button
+                          key={a + b}
+                          aria-label={`Gradient ${a} to ${b}`}
+                          className={`swatch ${active ? 'active' : ''}`}
+                          style={{ background: `linear-gradient(135deg, ${a}, ${b})` }}
+                          onClick={() =>
+                            edit((cfg) => {
+                              cfg.styles.background.gradient.stops = [
+                                { color: a, at: 0 },
+                                { color: b, at: 1 },
+                              ];
+                            })
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                {c.styles.background.type === 'mesh' && (
+                  <div className="swatch-grid">
+                    {MESHES.map((m) => {
+                      const active = m.every((col, i) => c.styles.background.gradient.stops[i]?.color === col);
+                      return (
+                        <button
+                          key={m.join()}
+                          aria-label={`Mesh ${m.join(' ')}`}
+                          className={`swatch ${active ? 'active' : ''}`}
+                          style={{ background: meshCss(m) }}
+                          onClick={() => edit((cfg) => (cfg.styles.background.gradient.stops = m.map((color, i) => ({ color, at: i / 3 }))))}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                {c.styles.background.type === 'color' && (
+                  <div className="swatch-grid small">
+                    {COLORS.map((col) => (
                       <button
-                        key={a + b}
-                        aria-label={`Gradient ${a} to ${b}`}
-                        className={`swatch ${active ? 'active' : ''}`}
-                        style={{ background: `linear-gradient(135deg, ${a}, ${b})` }}
-                        onClick={() =>
-                          edit((cfg) => {
-                            cfg.styles.background.type = 'gradient';
-                            cfg.styles.background.gradient.stops = [
-                              { color: a, at: 0 },
-                              { color: b, at: 1 },
-                            ];
-                          })
-                        }
+                        key={col}
+                        aria-label={`Colour ${col}`}
+                        className={`swatch ${c.styles.background.color === col ? 'active' : ''}`}
+                        style={{ background: col }}
+                        onClick={() => edit((cfg) => (cfg.styles.background.color = col))}
                       />
-                    );
-                  })}
-                </div>
-                <div className="swatch-grid small">
-                  {COLORS.map((col) => (
-                    <button
-                      key={col}
-                      aria-label={`Colour ${col}`}
-                      className={`swatch ${c.styles.background.type === 'color' && c.styles.background.color === col ? 'active' : ''}`}
-                      style={{ background: col }}
-                      onClick={() =>
-                        edit((cfg) => {
-                          cfg.styles.background.type = 'color';
-                          cfg.styles.background.color = col;
-                        })
-                      }
-                    />
-                  ))}
-                  <label className="swatch swatch-picker" aria-label="Custom colour">
-                    <input
-                      type="color"
-                      value={c.styles.background.color}
-                      onChange={(e) =>
-                        edit((cfg) => {
-                          cfg.styles.background.type = 'color';
-                          cfg.styles.background.color = e.target.value;
-                        })
-                      }
-                    />
-                  </label>
-                </div>
+                    ))}
+                    <label className="swatch swatch-picker" aria-label="Custom colour">
+                      <input type="color" value={c.styles.background.color} onChange={(e) => edit((cfg) => (cfg.styles.background.color = e.target.value))} />
+                    </label>
+                  </div>
+                )}
+                {c.styles.background.type === 'image' && (
+                  <>
+                    <Button icon={<ImageIcon />} onClick={() => void editor.chooseBackgroundImage()}>
+                      {c.styles.background.imagePath ? 'Change image…' : 'Choose image…'}
+                    </Button>
+                    {c.styles.background.imagePath && <p className="muted">{c.styles.background.imagePath.replace('backgrounds/', '')}</p>}
+                    <Row label="Blur">
+                      <Slider label="Background blur" min={0} max={100} step={1} value={c.styles.background.blur} format={(v) => `${v}`} onChange={(v, f) => edit((cfg) => (cfg.styles.background.blur = v), f)} />
+                    </Row>
+                  </>
+                )}
                 <h3>Frame</h3>
+                <Row label="Aspect ratio">
+                  <Segmented
+                    label="Aspect ratio"
+                    value={ASPECTS.find((a) => a.ratio === c.output.aspectRatio)?.value ?? 'auto'}
+                    options={ASPECTS.map((a) => ({ value: a.value, label: a.label }))}
+                    onChange={(v) => edit((cfg) => (cfg.output.aspectRatio = ASPECTS.find((a) => a.value === v)!.ratio))}
+                  />
+                </Row>
                 <Row label="Padding">
                   <Slider label="Padding" min={0} max={0.3} step={0.01} value={c.output.paddingRatio01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v, f) => edit((cfg) => (cfg.output.paddingRatio01 = v), f)} />
                 </Row>
