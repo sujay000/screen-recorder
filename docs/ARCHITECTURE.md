@@ -67,5 +67,6 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 - Corners are circular rounded rects, not Figma-smoothed squircles.
 - Hover sync points come only from Screen Studio's cache; Windows recordings don't compute them
   yet (affects how exactly the cursor lands on hover highlights; clicks are unaffected).
+- Loupe (magnifier) zooms are not implemented.
 - No webcam or camera layouts in the UI yet (the layout math in `core/camera/layout.ts` supports
   the overlay bubble).
