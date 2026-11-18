@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { openProject, readReferenceHoverTimes, saveProject } from '../node/bundle';
+import { openProject, readOwnHoverTimes, readReferenceHoverTimes, saveOwnHoverTimes, saveProject } from '../node/bundle';
 import { addAudioTrack } from '../node/recording-writer';
 import type { Project } from '../core/project/model';
 import { IPC, type AudioTrackInfo, type DisplayInfo, type OpenedProject, type RecorderStatus } from '../shared/ipc';
@@ -39,9 +39,12 @@ function open(bundlePath: string): OpenedProject {
   // Lowercase hex, because standard-scheme hosts are lowercased by the URL parser.
   const id = createHash('sha1').update(bundlePath).digest('hex');
   allowedRoots.set(id, path.join(bundlePath, 'recording'));
-  const hoverChangeTimes = readReferenceHoverTimes(bundlePath, project.recording.sessions.map((s) => s.recordingStartMs));
+  // Prefer the reference app's analysis when the bundle came from it, else our own cached one.
+  const reference = readReferenceHoverTimes(bundlePath, project.recording.sessions.map((s) => s.recordingStartMs));
+  const own = reference.length ? null : readOwnHoverTimes(bundlePath);
+  const hasHoverData = reference.length > 0 || own !== null || fs.existsSync(path.join(bundlePath, 'cache', 'cursor-hover_v3-all'));
   app.addRecentDocument(bundlePath);
-  return { project, hoverChangeTimes, mediaBase: `media://${id}/` };
+  return { project, hoverChangeTimes: reference.length ? reference : own ?? [], hasHoverData, mediaBase: `media://${id}/` };
 }
 
 function sendStatus(s: RecorderStatus): void {
@@ -60,6 +63,9 @@ function createWindow(): void {
   });
   window.loadFile(path.join(__dirname, '../renderer/index.html'));
   window.on('closed', () => (window = null));
+  // A crashed or killed page must leave a trace (reason + exit code) for debugging.
+  window.webContents.on('render-process-gone', (_e, d) => log('error', `Renderer gone: ${d.reason} (exit code ${d.exitCode})`));
+  window.webContents.on('console-message', (_e, level, message) => level >= 2 && log(level >= 3 ? 'error' : 'warn', `Page: ${message}`));
 }
 
 function registerMediaProtocol(): void {
@@ -178,6 +184,11 @@ function registerIpc(): void {
     if (discard && p) fs.rmSync(p, { force: true });
   });
   ipcMain.handle(IPC.revealFile, (_e, p: string) => shell.showItemInFolder(p));
+  ipcMain.handle(IPC.saveHoverChanges, (_e, bundle: string, times: number[]) => {
+    if (![...allowedRoots.values()].includes(path.join(bundle, 'recording'))) throw new Error(`Unknown recording ${bundle}`);
+    saveOwnHoverTimes(bundle, times);
+    log('info', `Hover analysis: ${times.length} changes saved for ${bundle}`);
+  });
 }
 
 // getDisplayMedia from the page is only used to capture system audio (Windows loopback).

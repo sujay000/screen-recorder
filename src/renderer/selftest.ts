@@ -3,6 +3,7 @@
 
 import type { EditorController } from './editor/editor-controller';
 import type { OpenedProject } from '../shared/ipc';
+import { analyseHovers } from './media/hover-analysis';
 
 export interface SelfTestJob {
   bundle: string;
@@ -12,6 +13,7 @@ export interface SelfTestJob {
   screenshot?: string; // if set: open, seek, let the UI settle, screenshot the window, skip export
   seekMs?: number;
   audioProbe?: boolean; // record 3 s with MediaRecorder (as the Windows app does) and decode it
+  hoverProbe?: boolean; // run our hover detector and compare with the reference app's cache
 }
 
 const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -43,6 +45,15 @@ export async function runSelfTest(job: SelfTestJob, open: (o: OpenedProject) => 
     if (job.screenshot) {
       editor.seek(job.seekMs ?? 4500);
       await settle(1200);
+      result.ok = true;
+      await window.recorder.reportSelfTest(result);
+      return;
+    }
+    if (job.hoverProbe) {
+      const t2 = performance.now();
+      result.ours = await analyseHovers(editor.project.recording, editor.video, (f) => console.warn(`hover analysis ${(f * 100).toFixed(0)}%`));
+      result.reference = editor.opened.hoverChangeTimes;
+      result.hoverMs = Math.round(performance.now() - t2);
       result.ok = true;
       await window.recorder.reportSelfTest(result);
       return;

@@ -10,6 +10,7 @@ import { CursorImages } from '../media/cursor-images';
 import { type DemuxedVideo, demuxVideo } from '../media/video-track';
 import { type ExportProgress, type ExportSettings, exportProject } from '../export/exporter';
 import { toast } from '../ui/overlay';
+import { analyseHovers } from '../media/hover-analysis';
 import { debounce } from '../util';
 import { Player } from './player';
 
@@ -53,7 +54,28 @@ export class EditorController {
     }
     const c = new EditorController(opened, video, compositor);
     await c.cursors.preload();
+    if (!opened.hasHoverData) void c.analyseHoversInBackground();
     return c;
+  }
+
+  hoverAnalysis: 'idle' | 'running' | 'done' | 'failed' = 'idle';
+  private analysisAbort = new AbortController();
+
+  // Finds hover moments in the video once, saves them in the bundle and re-plans the cursor.
+  private async analyseHoversInBackground(): Promise<void> {
+    this.hoverAnalysis = 'running';
+    this.listeners.forEach((l) => l());
+    try {
+      const times = await analyseHovers(this.project.recording, this.video, undefined, this.analysisAbort.signal);
+      await window.recorder.saveHoverChanges(this.project.path, times);
+      this.opened.hoverChangeTimes = times;
+      this.hoverAnalysis = 'done';
+      this.changed(false);
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      this.hoverAnalysis = 'failed';
+      toast('Hover analysis failed', { tone: 'error', description: `The cursor still lands on clicks; hover highlights are not synced. ${(err as Error).message}` });
+    }
   }
 
   get durationMs(): number {
@@ -179,6 +201,7 @@ export class EditorController {
   }
 
   destroy(): void {
+    this.analysisAbort.abort();
     this.detachCanvas();
     this.listeners.clear();
     this.playbackListeners.clear();

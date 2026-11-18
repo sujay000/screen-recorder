@@ -70,5 +70,21 @@ export function readReferenceHoverTimes(bundlePath: string, sessionStartsMs: num
       // An unreadable cache file only means no hover sync points.
     }
   }
-  return out.sort((a, b) => a - b);
+  return [...new Set(out)].sort((a, b) => a - b);
+}
+
+const OWN_HOVER_CACHE = ['cache', 'recorder-hover.json'];
+
+// Hover times from this app's own detector (recording time), or null if never computed.
+export function readOwnHoverTimes(bundlePath: string): number[] | null {
+  const f = path.join(bundlePath, ...OWN_HOVER_CACHE);
+  if (!fs.existsSync(f)) return null;
+  const j = JSON.parse(fs.readFileSync(f, 'utf8')) as { version: number; changeTimesMs: number[] };
+  return j.version === 1 ? j.changeTimesMs : null;
+}
+
+export function saveOwnHoverTimes(bundlePath: string, times: number[]): void {
+  const f = path.join(bundlePath, ...OWN_HOVER_CACHE);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify({ version: 1, changeTimesMs: times }));
 }

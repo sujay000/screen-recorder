@@ -18,6 +18,7 @@ const api: RecorderApi = {
   exportWrite: (h, pos, d) => ipcRenderer.invoke(IPC.exportWrite, h, pos, d),
   exportClose: (h, discard) => ipcRenderer.invoke(IPC.exportClose, h, discard),
   revealFile: (p) => ipcRenderer.invoke(IPC.revealFile, p),
+  saveHoverChanges: (b, times) => ipcRenderer.invoke(IPC.saveHoverChanges, b, times),
   onRecorderStatus: (cb) => {
     const listener = (_e: unknown, s: RecorderStatus) => cb(s);
     ipcRenderer.on(IPC.recorderStatus, listener);

@@ -6,6 +6,8 @@ import type { Project } from '../core/project/model';
 export interface OpenedProject {
   project: Project;
   hoverChangeTimes: number[];
+  // false when no hover data exists yet (the editor then analyses the video)
+  hasHoverData: boolean;
   // media:// URL prefix for files inside <bundle>/recording/
   mediaBase: string;
 }
@@ -45,6 +47,8 @@ export interface RecorderApi {
   exportWrite(handle: number, position: number, data: ArrayBuffer): Promise<void>;
   exportClose(handle: number, discard?: boolean): Promise<void>;
   revealFile(filePath: string): Promise<void>;
+  // Hover-change times computed by this app's detector, cached in the bundle.
+  saveHoverChanges(bundlePath: string, timesMs: number[]): Promise<void>;
   onRecorderStatus(cb: (s: RecorderStatus) => void): () => void;
   // Test harness only (see main.ts runSelfTestIfRequested).
   onSelfTest(cb: (jobJson: string) => void): void;
@@ -65,6 +69,7 @@ export const IPC = {
   exportWrite: 'export:write',
   exportClose: 'export:close',
   revealFile: 'shell:reveal',
+  saveHoverChanges: 'project:save-hover',
   selfTest: 'selftest:run',
   selfTestResult: 'selftest:result',
 } as const;
