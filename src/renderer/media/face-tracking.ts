@@ -27,19 +27,26 @@ export async function trackFaces(video: DemuxedVideo, onProgress?: (f: number) =
   const first = video.samples.reduce((m, s) => Math.min(m, s.timeMs), Infinity);
   const last = video.samples.reduce((m, s) => Math.max(m, s.timeMs), -Infinity);
   const out: FaceSample[] = [];
+  let decodeMs = 0;
+  let detectMs = 0;
   try {
     for (let t = first; t <= last; t += STEP_MS) {
       if (signal?.aborted) throw new DOMException('Face tracking cancelled', 'AbortError');
+      const t0 = performance.now();
       const frame = await frames.frameAt(t);
+      const t1 = performance.now();
+      decodeMs += t1 - t0;
       if (!frame) continue;
       g.drawImage(frame, 0, 0, ANALYSIS_WIDTH, h);
       const result = detector.detectForVideo(canvas as unknown as HTMLCanvasElement, Math.round(t - first));
+      detectMs += performance.now() - t1;
       const best = result.detections.reduce<(typeof result.detections)[number] | null>((m, d) => ((d.categories[0]?.score ?? 0) > (m?.categories[0]?.score ?? -1) ? d : m), null);
       const box = best?.boundingBox;
       if (box) out.push({ t, x01: (box.originX + box.width / 2) / ANALYSIS_WIDTH, y01: (box.originY + box.height / 2) / h });
       onProgress?.((t - first) / Math.max(1, last - first));
     }
   } finally {
+    console.warn(`face tracking: decode ${Math.round(decodeMs)} ms, detect ${Math.round(detectMs)} ms`);
     frames.close();
     detector.close();
   }

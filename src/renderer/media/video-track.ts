@@ -105,6 +105,9 @@ export function demuxBytes(bytes: Uint8Array, startOffsetMs: number): Promise<De
   });
 }
 
+const DECODE_AHEAD = 16;
+const MAX_DECODED = 12;
+
 function keyframeIndexAtOrBefore(samples: EncodedSample[], t: number): number {
   let idx = 0;
   for (let i = 0; i < samples.length; i++) {
@@ -124,6 +127,7 @@ export class SequentialFrames {
   private next = 0;
   private error: Error | null = null;
   private readonly order: EncodedSample[];
+  private wake: (() => void) | null = null;
 
   // startAtMs: begin decoding at the last keyframe at or before this time (for seeking).
   constructor(
@@ -133,16 +137,32 @@ export class SequentialFrames {
     this.order = video.samples;
     this.next = keyframeIndexAtOrBefore(video.samples, startAtMs);
     this.decoder = new VideoDecoder({
-      output: (frame) => this.queue.push({ timeMs: frame.timestamp / 1000, frame }),
-      error: (e) => (this.error = e instanceof Error ? e : new Error(String(e))),
+      output: (frame) => {
+        this.queue.push({ timeMs: frame.timestamp / 1000, frame });
+        this.notify();
+      },
+      error: (e) => {
+        this.error = e instanceof Error ? e : new Error(String(e));
+        this.notify();
+      },
     });
     this.decoder.configure(video.config);
   }
 
-  private feed(count: number): void {
-    for (let i = 0; i < count && this.next < this.order.length; i++, this.next++) {
+  private notify(): void {
+    const w = this.wake;
+    this.wake = null;
+    w?.();
+  }
+
+  // Keeps the decoder busy: hardware decoders (and B-frame reordering) only produce frames
+  // when enough input is queued, so feed up to DECODE_AHEAD samples, but do not hold more than
+  // MAX_DECODED decoded frames (decoders have a limited frame pool).
+  private feed(): void {
+    while (this.next < this.order.length && this.decoder.decodeQueueSize < DECODE_AHEAD && this.queue.length < MAX_DECODED) {
       const s = this.order[this.next];
       this.decoder.decode(new EncodedVideoChunk({ type: s.isKey ? 'key' : 'delta', timestamp: Math.round(s.timeMs * 1000), duration: Math.round(s.durationMs * 1000), data: s.data }));
+      this.next++;
     }
   }
 
@@ -161,8 +181,12 @@ export class SequentialFrames {
         await this.decoder.flush();
         continue;
       }
-      this.feed(8);
-      await new Promise((r) => setTimeout(r, 0));
+      this.feed();
+      // Wait for the next decoded frame (or a short timeout, in case the decoder needs more input).
+      await new Promise<void>((r) => {
+        this.wake = r;
+        setTimeout(r, 20);
+      });
     }
     return this.current?.frame ?? null;
   }
