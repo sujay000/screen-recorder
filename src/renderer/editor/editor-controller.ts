@@ -9,6 +9,7 @@ import type { Compositor } from '../gpu/compositor';
 import { CursorImages } from '../media/cursor-images';
 import { type DemuxedVideo, demuxVideo } from '../media/video-track';
 import { type ExportProgress, type ExportSettings, exportProject } from '../export/exporter';
+import { exportGif } from '../export/gif-exporter';
 import { toast } from '../ui/overlay';
 import { analyseHovers } from '../media/hover-analysis';
 import { debounce } from '../util';
@@ -126,7 +127,9 @@ export class EditorController {
     const canvas = this.canvas;
     this.pause();
     try {
-      await exportProject({ scene: this.scene, compositor: this.compositor, cursors: this.cursors, video: this.video, camera: this.camera, mediaBase: this.opened.mediaBase }, settings, onProgress, signal);
+      const sources = { scene: this.scene, compositor: this.compositor, cursors: this.cursors, video: this.video, camera: this.camera, mediaBase: this.opened.mediaBase };
+      if (settings.format === 'gif') await exportGif(sources, settings, onProgress, signal);
+      else await exportProject(sources, settings, onProgress, signal);
     } finally {
       if (canvas) await this.attachCanvas(canvas);
     }

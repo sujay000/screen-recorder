@@ -11,6 +11,7 @@ export interface SelfTestJob {
   bundle: string;
   out: string;
   fps?: number;
+  format?: 'mp4' | 'gif';
   height?: number;
   screenshot?: string; // if set: open, seek, let the UI settle, screenshot the window, skip export
   seekMs?: number;
@@ -69,7 +70,7 @@ export async function runSelfTest(job: SelfTestJob, open: (o: OpenedProject) => 
     }
     const t1 = performance.now();
     let frames = 0;
-    await editor.export({ fps: job.fps ?? 60, height: job.height ?? 1080, filePath: job.out }, (p) => (frames = p.frame), new AbortController().signal);
+    await editor.export({ format: job.format ?? 'mp4', fps: job.fps ?? 60, height: job.height ?? 1080, filePath: job.out }, (p) => (frames = p.frame), new AbortController().signal);
     result.exportFrames = frames;
     result.exportMs = Math.round(performance.now() - t1);
     result.ok = true;

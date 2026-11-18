@@ -12,6 +12,7 @@ import { encodeMix, loadAudioClips, pickAudioCodec, SAMPLE_RATE } from '../media
 import { FrameRenderer } from '../render/frame-renderer';
 
 export interface ExportSettings {
+  format?: 'mp4' | 'gif'; // default mp4
   fps: number;
   height: number; // output height in px; width follows the stage aspect
   filePath: string;

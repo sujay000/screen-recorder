@@ -66,6 +66,10 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 
 ## Known differences from the reference
 
+- Keyboard keycaps: the reference moves each keycap with a stiff spring; here the 100 ms fade and
+  rise ramps are smoothstepped, and keys jump (instead of sliding) when a combo changes width.
+- Clip speed changes audio pitch (tape-style playback rate), there is no time stretching.
+
 - Motion blur samples the trail (16 taps on export) instead of the analytic quadratic integral.
 - Corners are circular rounded rects, not Figma-smoothed squircles.
 - Hover detection (`core/cursor/hover-detector.ts`) matches the reference on the two sample

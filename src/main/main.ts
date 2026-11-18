@@ -160,7 +160,8 @@ function registerIpc(): void {
   });
 
   ipcMain.handle(IPC.chooseExportPath, async (_e, name: string) => {
-    const r = await dialog.showSaveDialog(window!, { defaultPath: path.join(app.getPath('videos'), name), filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
+    const filters = name.endsWith('.gif') ? [{ name: 'GIF animation', extensions: ['gif'] }] : [{ name: 'MP4 video', extensions: ['mp4'] }];
+    const r = await dialog.showSaveDialog(window!, { defaultPath: path.join(app.getPath('videos'), name), filters });
     return r.canceled ? null : r.filePath ?? null;
   });
   ipcMain.handle(IPC.exportOpen, (_e, p: string) => {

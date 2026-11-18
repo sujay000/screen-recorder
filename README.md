@@ -10,7 +10,12 @@ re-implemented from verified specs of Screen Studio 4.1.0 (see `~/screen-recorde
 1. Unzip `Recorder-<version>-win.zip` and run `Recorder.exe`.
 2. Pick a display, choose microphone / system audio, press **Start recording**.
 3. Press the red timer button to stop. The recording opens in the editor.
-4. Adjust zooms on the timeline, style in the right panel, then **Export** to MP4.
+4. Adjust zooms and clips on the timeline, style in the right panel, then **Export** to MP4 or GIF.
+
+What the editor does: automatic zooms that follow your clicks (or a glass **loupe** magnifier
+instead, per zoom), a smoothed cursor that lands on what you click, click effects, motion blur,
+backgrounds (gradient, mesh, colour, blurred image), aspect ratio presets, a webcam bubble,
+trim / cut / speed per clip, and keyboard shortcut keycaps.
 
 If recording fails, run the native helper's self-check from a terminal in the unzipped folder:
 `resources\native\recorder.exe self-check --out %TEMP%\rc-check`. It tests monitor/DPI lookup, input
@@ -19,8 +24,9 @@ hooks, cursor capture and file writing in about 2 seconds and prints a JSON repo
 Recordings are saved in `Videos\Recorder\*.recording`. Screen Studio projects (`.screenstudio`)
 open in the editor too.
 
-Shortcuts: `Space` play/pause · `Z` add a zoom at the playhead · `Delete` remove the selected
-zoom · `←/→` step a frame (`Shift` for a second) · `Esc` deselect.
+Shortcuts: `Space` play/pause · `S` split the clip at the playhead · `Z` add a zoom at the playhead ·
+`Delete` remove the selected zoom or cut the selected clip · `←/→` step a frame (`Shift` for a
+second) · `Esc` deselect.
 
 ## Develop
 
