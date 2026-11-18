@@ -39,14 +39,21 @@ jobs:
         run: node scripts/validate-bundle.mjs "$RUNNER_TEMP/ci.recording" --expect-clicks 3 --expect-min-seconds 5 --expect-min-moves 100
       - name: Build app and export the recording in-app
         shell: bash
-        timeout-minutes: 6
+        timeout-minutes: 10
         env:
-          RECORDER_SOFTWARE_GPU: '1'
-          # A 9 s recording exports in about 1-2 min on the software renderer.
+          # A 9 s recording exports in about 1-2 min on a software renderer.
           SELFTEST_TIMEOUT_S: '240'
         run: |
           node scripts/build.mjs
-          sh scripts/selftest.sh "$RUNNER_TEMP/ci.recording" "$RUNNER_TEMP/ci-export.mp4" 30 720
+          # The runner has no GPU: try Windows' WARP adapter first, then SwiftShader.
+          ok=0
+          for gpu in warp swiftshader; do
+            echo "::group::self-test with RECORDER_SOFTWARE_GPU=$gpu"
+            if RECORDER_SOFTWARE_GPU=$gpu sh scripts/selftest.sh "$RUNNER_TEMP/ci.recording" "$RUNNER_TEMP/ci-export.mp4" 30 720; then ok=1; fi
+            echo "::endgroup::"
+            [ $ok = 1 ] && break
+          done
+          [ $ok = 1 ] || { echo "Export failed with both software GPUs"; exit 1; }
           ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames:format=duration -of compact "$RUNNER_TEMP/ci-export.mp4"
       - name: Package
         run: npx electron-builder --win zip --x64 --publish never

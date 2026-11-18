@@ -47,7 +47,9 @@ export async function runSelfTest(job: SelfTestJob, open: (o: OpenedProject) => 
       return;
     }
     const t0 = performance.now();
+    console.warn('selftest: opening the project');
     const editor = await open(await window.recorder.openProject(job.bundle));
+    console.warn(`selftest: opened (GPU: ${Compositor.adapterInfo || 'unknown'})`);
     result.openMs = Math.round(performance.now() - t0);
     result.gpu = Compositor.adapterInfo;
     result.durationMs = editor.durationMs;
@@ -90,7 +92,15 @@ export async function runSelfTest(job: SelfTestJob, open: (o: OpenedProject) => 
     }
     const t1 = performance.now();
     let frames = 0;
-    await editor.export({ format: job.format ?? 'mp4', fps: job.fps ?? 60, height: job.height ?? 1080, filePath: job.out }, (p) => (frames = p.frame), new AbortController().signal);
+    console.warn('selftest: export starting');
+    await editor.export(
+      { format: job.format ?? 'mp4', fps: job.fps ?? 60, height: job.height ?? 1080, filePath: job.out },
+      (p) => {
+        frames = p.frame;
+        if (p.frame === 1 || p.frame % 30 === 0) console.warn(`selftest: exported frame ${p.frame}/${p.frames}`);
+      },
+      new AbortController().signal,
+    );
     result.exportFrames = frames;
     result.exportMs = Math.round(performance.now() - t1);
     result.ok = true;

@@ -18,4 +18,8 @@ if [ ! -f "$2.json" ]; then
   exit 1
 fi
 cat "$2.json"
-node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).ok ? 0 : 1)' "$2.json"
+if ! node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).ok ? 0 : 1)' "$2.json"; then
+  echo "App log:"
+  tail -30 "$2.log"
+  exit 1
+fi

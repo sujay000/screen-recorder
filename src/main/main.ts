@@ -13,16 +13,20 @@ import { IPC, type MediaTrackInfo, type DisplayInfo, type OpenedProject, type Re
 import { appendTo, log, mainLogPath } from './log';
 import { NativeRecorder, helperPath } from './native-recorder';
 
-// Software WebGPU for machines without a GPU (CI runners, VMs). Opt-in, because it is slow:
-// Chromium's SwiftShader (software Vulkan) adapter, with the GPU blocklist ignored so the GPU
-// process starts at all on a machine with no real GPU.
-if (process.env.RECORDER_SOFTWARE_GPU === '1') {
-  app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+// Software WebGPU for machines without a GPU (CI runners, VMs). Opt-in, because it is slow.
+// RECORDER_SOFTWARE_GPU=warp: the GPU blocklist is ignored so Chromium can use Windows' own
+//   software adapter (WARP, Direct3D 12) as the WebGPU fallback adapter.
+// RECORDER_SOFTWARE_GPU=swiftshader (or 1): Chromium's SwiftShader (software Vulkan) adapter.
+const softwareGpu = process.env.RECORDER_SOFTWARE_GPU;
+if (softwareGpu) {
   app.commandLine.appendSwitch('enable-unsafe-webgpu');
   app.commandLine.appendSwitch('ignore-gpu-blocklist');
-  app.commandLine.appendSwitch('enable-features', 'Vulkan');
-  app.commandLine.appendSwitch('use-vulkan', 'swiftshader');
-  app.commandLine.appendSwitch('use-webgpu-adapter', 'swiftshader');
+  if (softwareGpu !== 'warp') {
+    app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+    app.commandLine.appendSwitch('enable-features', 'Vulkan');
+    app.commandLine.appendSwitch('use-vulkan', 'swiftshader');
+    app.commandLine.appendSwitch('use-webgpu-adapter', 'swiftshader');
+  }
 }
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -73,8 +77,13 @@ function createWindow(): void {
   window.loadFile(path.join(__dirname, '../renderer/index.html'));
   window.on('closed', () => (window = null));
   // A crashed or killed page must leave a trace (reason + exit code) for debugging.
-  window.webContents.on('render-process-gone', (_e, d) => log('error', `Renderer gone: ${d.reason} (exit code ${d.exitCode})`));
-  window.webContents.on('console-message', (_e, level, message) => level >= 2 && log(level >= 3 ? 'error' : 'warn', `Page: ${message}`));
+  window.webContents.on('render-process-gone', (_e, d) => {
+    log('error', `Renderer gone: ${d.reason} (exit code ${d.exitCode})`);
+    selfTestFailed?.(`Renderer crashed: ${d.reason} (exit code ${d.exitCode}). See the app log for the last step reached.`);
+  });
+  window.webContents.on('console-message', (e) => {
+    if (e.level === 'warning' || e.level === 'error') log(e.level === 'error' ? 'error' : 'warn', `Page: ${e.message}`);
+  });
 }
 
 const MEDIAPIPE_HOST = 'mediapipe';
@@ -242,10 +251,15 @@ function registerDisplayMediaHandler(): void {
 
 // Test harness: RECORDER_SELFTEST='{"bundle": "...", "out": "...", "fps": 60, "height": 1080}' opens a
 // project, renders preview frames and exports it, then writes <out>.json with the result and quits.
+// Set while a self-test runs: writes a failed result and quits (so CI does not wait for a
+// result that can never come).
+let selfTestFailed: ((error: string) => void) | null = null;
+
 function runSelfTestIfRequested(): void {
   const raw = process.env.RECORDER_SELFTEST;
   if (!raw || !window) return;
-  let job: { bundle: string; out: string; screenshot?: string };
+  // crashRenderer: test aid, crashes the page after load to check the crash handling.
+  let job: { bundle: string; out: string; screenshot?: string; crashRenderer?: boolean };
   try {
     job = JSON.parse(raw) as typeof job;
   } catch (err) {
@@ -254,12 +268,19 @@ function runSelfTestIfRequested(): void {
     app.exit(2);
     return;
   }
+  selfTestFailed = (error) => {
+    fs.writeFileSync(job.out + '.json', JSON.stringify({ ok: false, error }, null, 2));
+    app.exit(1);
+  };
   ipcMain.handle(IPC.selfTestResult, async (_e, result: unknown) => {
     if (job.screenshot && window) fs.writeFileSync(job.screenshot, (await window.webContents.capturePage()).toPNG());
     fs.writeFileSync(job.out + '.json', JSON.stringify(result, null, 2));
     app.quit();
   });
-  window.webContents.once('did-finish-load', () => window?.webContents.send(IPC.selfTest, raw));
+  window.webContents.once('did-finish-load', () => {
+    if (job.crashRenderer) window?.webContents.forcefullyCrashRenderer();
+    else window?.webContents.send(IPC.selfTest, raw);
+  });
 }
 
 process.on('uncaughtException', (err) => log('error', `Uncaught in main: ${err.stack ?? err.message}`));
