@@ -206,6 +206,8 @@ pub fn record(args: &Args) -> Result<(), String> {
 
     let within = |t: f64| t >= start_ms && t <= end_ms;
     let mut moves: Vec<_> = s.moves.lock().map_err(|e| e.to_string())?.iter().filter(|e| within(e.process_time_ms)).cloned().collect();
+    // Hook and poll moves come from two threads: put them in time order.
+    moves.sort_by(|a, b| a.process_time_ms.total_cmp(&b.process_time_ms));
     // The editor draws the cursor from the first event on, so pin the pointer's position at the
     // very start (otherwise it is invisible until the mouse first moves).
     if let (Some((x, y)), true) = (initial_pos, moves.first().is_none_or(|m| m.process_time_ms > start_ms)) {

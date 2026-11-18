@@ -1,6 +1,6 @@
 // Checks that a recording bundle is complete and self-consistent. Used on CI after the scripted
 // Windows recording, and locally against reference bundles.
-// Usage: node scripts/validate-bundle.mjs <bundle> [--expect-clicks N] [--expect-min-seconds S]
+// Usage: node scripts/validate-bundle.mjs <bundle> [--expect-clicks N] [--expect-min-seconds S] [--expect-min-moves M]
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -77,6 +77,8 @@ try {
 
 const expectClicks = opt('--expect-clicks');
 if (expectClicks !== null) check(downs >= expectClicks, `expected at least ${expectClicks} mouseDown events, got ${downs}`);
+const minMoves = opt('--expect-min-moves');
+if (minMoves !== null) check(moves.length >= minMoves, `expected at least ${minMoves} mouse moves, got ${moves.length} (pointer moves not captured)`);
 const minS = opt('--expect-min-seconds');
 if (minS !== null) check(durationMs / 1000 >= minS, `expected at least ${minS}s, got ${durationMs / 1000}s`);
 

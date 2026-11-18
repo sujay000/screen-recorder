@@ -36,7 +36,7 @@ jobs:
         run: ./scripts/ci/scripted-recording.ps1 -Recorder native/bin/recorder.exe -Bundle "$env:RUNNER_TEMP\ci.recording"
       - name: Validate recording bundle
         shell: bash
-        run: node scripts/validate-bundle.mjs "$RUNNER_TEMP/ci.recording" --expect-clicks 3 --expect-min-seconds 5
+        run: node scripts/validate-bundle.mjs "$RUNNER_TEMP/ci.recording" --expect-clicks 3 --expect-min-seconds 5 --expect-min-moves 100
       - name: Build app and export the recording in-app
         shell: bash
         env:

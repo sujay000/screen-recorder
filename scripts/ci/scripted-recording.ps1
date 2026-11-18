@@ -1,5 +1,6 @@
 # Records ~8 s with the native recorder while driving the mouse and keyboard, so the bundle has
-# known content: 3 clicks, a drag and some typing. Usage: scripted-recording.ps1 <recorder.exe> <bundleDir>
+# known content: 3 clicks, a drag and some typing. Moves alternate between real mouse input (seen
+# by the input hook) and SetCursorPos (seen only by the recorder's cursor poll), to test both. Usage: scripted-recording.ps1 <recorder.exe> <bundleDir>
 param([string]$Recorder, [string]$Bundle)
 $ErrorActionPreference = 'Stop'
 
@@ -10,6 +11,12 @@ public static class Input {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint f, UIntPtr e);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
+  // Real (injected) mouse input, which the recorder's low-level hook sees, unlike SetCursorPos.
+  public static void MoveTo(int x, int y) {
+    int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+    mouse_event(0x8001, (uint)(x * 65535 / Math.Max(1, w - 1)), (uint)(y * 65535 / Math.Max(1, h - 1)), 0, UIntPtr.Zero);
+  }
   public static void Click() { mouse_event(0x02, 0, 0, 0, UIntPtr.Zero); System.Threading.Thread.Sleep(60); mouse_event(0x04, 0, 0, 0, UIntPtr.Zero); }
   public static void Key(byte vk) { keybd_event(vk, 0, 0, UIntPtr.Zero); System.Threading.Thread.Sleep(30); keybd_event(vk, 0, 2, UIntPtr.Zero); }
 }
@@ -34,15 +41,17 @@ while ($true) {
   if ($line -match '"started"') { break }
 }
 
-function Glide($x0, $y0, $x1, $y1, $steps) {
+function Glide($x0, $y0, $x1, $y1, $steps, [switch]$SetPos) {
   for ($i = 0; $i -le $steps; $i++) {
-    [Input]::SetCursorPos([int]($x0 + ($x1 - $x0) * $i / $steps), [int]($y0 + ($y1 - $y0) * $i / $steps)) | Out-Null
+    $x = [int]($x0 + ($x1 - $x0) * $i / $steps)
+    $y = [int]($y0 + ($y1 - $y0) * $i / $steps)
+    if ($SetPos) { [Input]::SetCursorPos($x, $y) | Out-Null } else { [Input]::MoveTo($x, $y) }
     Start-Sleep -Milliseconds 12
   }
 }
 
 Glide 100 100 600 400 60; [Input]::Click(); Start-Sleep -Milliseconds 700
-Glide 600 400 900 300 50; [Input]::Click(); Start-Sleep -Milliseconds 700
+Glide 600 400 900 300 50 -SetPos; [Input]::Click(); Start-Sleep -Milliseconds 700
 foreach ($vk in 0x48, 0x45, 0x4C, 0x4C, 0x4F) { [Input]::Key($vk); Start-Sleep -Milliseconds 90 }
 Glide 900 300 300 600 70; [Input]::Click(); Start-Sleep -Milliseconds 900
 # Drag

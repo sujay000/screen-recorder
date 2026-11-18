@@ -1,6 +1,9 @@
-//! Cursor shape tracking: polls the system cursor each frame, names standard cursors with the same
+//! Cursor shape tracking: polls the system cursor every 8 ms, names standard cursors with the same
 //! ids the editor knows (arrow, iBeam, pointingHand, ...), saves every new shape as a PNG with its
 //! hotspot, and records a synthetic move when the shape changes (like the reference recorder).
+//!
+//! The same poll also records pointer moves the low-level mouse hook never sees: SetCursorPos,
+//! remote-desktop and some tablet input move the pointer without a hook event.
 
 use super::{clock, state};
 use crate::bundle::{CursorRecord, MouseRecord, Point, Size};
@@ -142,10 +145,20 @@ pub fn start() -> CursorThread {
         let standard = standard_cursors();
         let mut last: isize = 0;
         let mut seen: std::collections::HashMap<isize, String> = Default::default();
+        // Events default to "arrow" until the first shape is seen, so the arrow image must always
+        // be in the bundle. (Windows reports no visible cursor when no mouse is attached.)
+        if let Some((raw, _)) = standard.iter().find(|(_, n)| *n == "arrow") {
+            let id = register_cursor(*raw, HCURSOR(*raw as *mut _), &standard);
+            seen.insert(*raw, id);
+        }
+        let mut last_pos: Option<(i32, i32)> = None;
         while !s.stopping.load(Ordering::Relaxed) {
             let mut ci = CURSORINFO { cbSize: std::mem::size_of::<CURSORINFO>() as u32, ..Default::default() };
             let ok = unsafe { GetCursorInfo(&mut ci).is_ok() };
-            if ok && (ci.flags.0 & CURSOR_SHOWING.0) != 0 && ci.hCursor.0 as isize != last {
+            if ok {
+                record_unhooked_move(ci.ptScreenPos, &mut last_pos);
+            }
+            if ok && (ci.flags.0 & CURSOR_SHOWING.0) != 0 && !ci.hCursor.is_invalid() && ci.hCursor.0 as isize != last {
                 let raw = ci.hCursor.0 as isize;
                 last = raw;
                 let id = match seen.get(&raw) {
@@ -180,6 +193,33 @@ pub fn start() -> CursorThread {
         }
     });
     CursorThread { handle }
+}
+
+// Adds a move if the pointer is somewhere the last recorded move (from the hook or from here) is
+// not. Hook moves arrive at the same positions, so with a real mouse this adds almost nothing.
+fn record_unhooked_move(pos: POINT, last_pos: &mut Option<(i32, i32)>) {
+    let s = state::get();
+    let here = (pos.x, pos.y);
+    if *last_pos == Some(here) {
+        return;
+    }
+    *last_pos = Some(here);
+    let (px, py) = s.to_points(pos.x, pos.y);
+    let Ok(mut m) = s.moves.lock() else { return };
+    if m.last().is_some_and(|l| (l.x - px).abs() < 0.01 && (l.y - py).abs() < 0.01) {
+        return;
+    }
+    let kind = if s.buttons_down.load(Ordering::Relaxed) != 0 { "mouseDragged" } else { "mouseMoved" };
+    m.push(MouseRecord {
+        kind,
+        x: px,
+        y: py,
+        cursor_id: s.current_cursor(),
+        process_time_ms: clock::now_ms(),
+        unix_time_ms: clock::unix_ms(),
+        active_modifiers: vec![],
+        button: None,
+    });
 }
 
 fn register_cursor(raw: isize, h: HCURSOR, standard: &[(isize, &'static str)]) -> String {
