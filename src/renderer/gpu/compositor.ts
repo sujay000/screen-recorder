@@ -9,8 +9,9 @@ import shaderSource from './compositor.wgsl';
 import loupeSource from './loupe.wgsl';
 import overlaySource from './overlay.wgsl';
 import type { FrameInputs, LoupeInputs, RectV } from '../../core/scene/frame-inputs';
+import { squircleLutCached } from '../../core/geometry/squircle';
 
-const PARAM_FLOATS = 124;
+const PARAM_FLOATS = 156;
 const LOUPE_PARAM_FLOATS = 28;
 
 interface Pipelines {
@@ -278,7 +279,9 @@ export class Compositor {
       rect(112, cam.before);
       d.set([cam.radius, cam.opacity, cam.mirror ? 1 : 0, 1], 116);
       d.set([this.cameraTex.width, this.cameraTex.height, 0, 0], 120);
+      d.set(squircleLutCached(cam.now.width, cam.now.height, cam.radius), 140);
     }
+    d.set(squircleLutCached(f.screenNow.width, f.screenNow.height, f.screenRadius), 124);
     this.device.queue.writeBuffer(buffer, 0, d);
   }
 

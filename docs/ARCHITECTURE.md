@@ -71,7 +71,8 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 - Clip speed changes audio pitch (tape-style playback rate), there is no time stretching.
 
 - Motion blur samples the trail (16 taps on export) instead of the analytic quadratic integral.
-- Corners are circular rounded rects, not Figma-smoothed squircles.
+- Corners are Figma-smoothed squircles (reference ray table); the shadow caster stays a circular
+  rounded rect.
 - Hover detection (`core/cursor/hover-detector.ts`) matches the reference on the two sample
   recordings (Area: identical; 100 s test: 4 of 5 identical, 1 a frame earlier). Repeat
   suppression within 120 ms is inferred from those results, not read from the binary.

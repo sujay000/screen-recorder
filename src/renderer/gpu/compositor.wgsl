@@ -52,6 +52,8 @@ struct Params {
   hasCamera: f32,
   cameraSize: vec2f,         // webcam frame size in pixels
   _pad2: vec2f,
+  screenCornerLut: array<vec4f, 4>,  // smoothed-corner ray table (core/geometry/squircle.ts)
+  cameraCornerLut: array<vec4f, 4>,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -163,6 +165,30 @@ fn sdRoundRect(p: vec2f, rect: vec4f, radius: f32) -> f32 {
 }
 
 fn aaUnits() -> f32 { return 1.5 / P.pxPerUnit; }
+
+fn cornerLut(which: i32, i: i32) -> f32 {
+  let v = select(P.screenCornerLut[i / 4], P.cameraCornerLut[i / 4], which == 1);
+  return v[i % 4];
+}
+
+// Figma-smoothed rounded rect (render.md §4.1): a rounded-rect SDF with corner extent
+// p = min(short/2, 2·min(r, short/2)) whose radius is scaled per angle by the ray table.
+fn sdSquircle(p: vec2f, rect: vec4f, radius: f32, which: i32) -> f32 {
+  let half = rect.zw * 0.5;
+  let m = min(half.x, half.y);
+  let ext = min(m, 2.0 * min(radius, m));
+  let d = abs(p - (rect.xy + half)) + vec2f(ext) - half;
+  var ratio = 1.0;
+  if (d.x > 0.0 && d.y > 0.0) {
+    let angle = atan2(d.y, d.x);
+    let folded = 0.78539816 - abs(angle - 0.78539816);
+    let idx = folded * 19.098593;
+    let i0 = i32(clamp(idx, 0.0, 15.0));
+    let i1 = min(i0 + 1, 15);
+    ratio = mix(cornerLut(which, i0), cornerLut(which, i1), fract(idx));
+  }
+  return length(max(d, vec2f(0.0))) + min(max(d.x, d.y), 0.0) - ext * ratio;
+}
 
 // ---- Background -----------------------------------------------------------------------------
 
@@ -276,7 +302,7 @@ fn shadowOver(color: vec4f, mask: f32) -> vec4f {
 
 fn cameraSample(p: vec2f, rect: vec4f) -> vec4f {
   let aa = aaUnits();
-  let cov = smoothstep(aa, -aa, sdRoundRect(p, rect, P.cameraRadius * rect.z / max(P.cameraNow.z, 1e-4)));
+  let cov = smoothstep(aa, -aa, sdSquircle(p, rect, P.cameraRadius * rect.z / max(P.cameraNow.z, 1e-4), 1));
   if (cov <= 0.0) { return vec4f(0.0); }
   var uv = clamp((p - rect.xy) / rect.zw, vec2f(0.0), vec2f(1.0));
   let rectAspect = rect.z / max(rect.w, 1e-4);
@@ -333,7 +359,7 @@ fn rippleWarp(p: vec2f) -> vec4f {
 
 fn screenSample(p: vec2f, rect: vec4f) -> vec4f {
   let aa = aaUnits();
-  let cov = smoothstep(aa, -aa, sdRoundRect(p, rect, P.screenRadius * rect.z / max(P.screenNow.z, 1e-4)));
+  let cov = smoothstep(aa, -aa, sdSquircle(p, rect, P.screenRadius * rect.z / max(P.screenNow.z, 1e-4), 0));
   if (cov <= 0.0) { return vec4f(0.0); }
   let warp = rippleWarp(p);
   let q = p - warp.xy;
