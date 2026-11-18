@@ -10,8 +10,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -47,7 +47,7 @@ jobs:
           ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames:format=duration -of compact "$RUNNER_TEMP/ci-export.mp4"
       - name: Package
         run: npx electron-builder --win zip --x64 --publish never
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: recorder-windows
