@@ -5,7 +5,9 @@ import type { RectLike } from '../geometry/rect';
 
 export interface FrameStyle {
   screen: RectLike;
-  camera: RectLike | null;
+  screenRoundness: number; // 1 = configured corner radius, 0 = square (split screen)
+  // Webcam: radius in stage units, opacity 0 while hidden (it also shrinks to 0.9 then).
+  camera: { rect: RectLike; radius: number; opacity: number } | null;
   cursor: { x01: number; y01: number; opacity: number; scale: number; rotation: number; fadeBlur: number };
   background: { scale: number; originX: number; originY: number; blur: number };
   zoom: number;
@@ -51,11 +53,14 @@ export function flatten(s: FrameStyle): Record<string, number> {
     ls: s.loupe.shadowAlpha,
     lp: s.loupe.presence,
   };
+  r.sro = s.screenRoundness;
   if (s.camera) {
-    r.kx = s.camera.x;
-    r.ky = s.camera.y;
-    r.kw = s.camera.width;
-    r.kh = s.camera.height;
+    r.kx = s.camera.rect.x;
+    r.ky = s.camera.rect.y;
+    r.kw = s.camera.rect.width;
+    r.kh = s.camera.rect.height;
+    r.kr = s.camera.radius;
+    r.ko = s.camera.opacity;
   }
   return r;
 }
@@ -63,7 +68,8 @@ export function flatten(s: FrameStyle): Record<string, number> {
 export function unflatten(r: Record<string, number>): FrameStyle {
   return {
     screen: { x: r.sx, y: r.sy, width: r.sw, height: r.sh },
-    camera: 'kx' in r ? { x: r.kx, y: r.ky, width: r.kw, height: r.kh } : null,
+    screenRoundness: r.sro,
+    camera: 'kx' in r ? { rect: { x: r.kx, y: r.ky, width: r.kw, height: r.kh }, radius: r.kr, opacity: r.ko } : null,
     cursor: { x01: r.cx01, y01: r.cy01, opacity: r.cop, scale: r.csc, rotation: r.crot, fadeBlur: r.cblur },
     background: { scale: r.bgs, originX: r.bgx, originY: r.bgy, blur: r.bgb },
     zoom: r.zoom,

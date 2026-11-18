@@ -10,7 +10,7 @@ Features:
 - cursor smoothing, tilt and click effects
 - backgrounds: gradient, mesh, colour, blurred image
 - aspect ratio presets (16:9, 9:16, 1:1, 4:3)
-- webcam bubble
+- webcam as a bubble or split screen, with camera-only / screen-only clips
 - trim, cut and speed per clip
 - keyboard shortcut keycaps
 - export to MP4 or GIF
@@ -51,7 +51,7 @@ Recordings are saved in `Videos\Recorder\<name>.recording` (one folder per recor
 - **Timeline**: zooms are created from your clicks. Drag a zoom to move it, drag its edges to
   resize, click it to change its level, target or style (Screen / Loupe).
 - **Clips**: press `S` to split at the playhead. Drag a clip's edges to trim it. Select a clip
-  to change its speed or cut it.
+  to change its speed, show only the camera or only the screen, or cut it.
 - **Right panel**: background, padding, roundness, shadow, camera (Style tab); cursor and
   keyboard shortcuts (Cursor tab); animation (Motion tab); audio (Audio tab).
 - **Export** (top right): MP4 (720p to 4K, 30 or 60 fps, with audio) or GIF (360p to 720p).

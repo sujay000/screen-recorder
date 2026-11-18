@@ -415,6 +415,21 @@ function CameraSection({ editor }: { editor: EditorController }) {
       </Row>
       {!cam.hide && (
         <>
+          <Row label="Layout" hint={cam.layout === 'split' ? 'Camera panel beside the screen; a bubble while zoomed' : 'Bubble over the screen'}>
+            <Segmented
+              label="Camera layout"
+              value={cam.layout}
+              options={[
+                { value: 'overlay', label: 'Bubble' },
+                { value: 'split', label: 'Split screen' },
+              ]}
+              onChange={(v) => edit((cfg) => (cfg.camera.layout = v))}
+            />
+          </Row>
+        </>
+      )}
+      {!cam.hide && cam.layout === 'overlay' && (
+        <>
           <Row label="Position">
             <Segmented
               label="Camera position"
@@ -441,10 +456,12 @@ function CameraSection({ editor }: { editor: EditorController }) {
           <Row label="Roundness">
             <Slider label="Camera roundness" min={0} max={0.5} step={0.01} value={cam.borderRadiusRatio01} format={(v) => `${Math.round(v * 200)}%`} onChange={(v, f) => edit((cfg) => (cfg.camera.borderRadiusRatio01 = v), f)} />
           </Row>
-          <Row label="Mirror">
-            <Switch label="Mirror camera" checked={cam.mirror} onChange={(v) => edit((cfg) => (cfg.camera.mirror = v))} />
-          </Row>
         </>
+      )}
+      {!cam.hide && (
+        <Row label="Mirror">
+          <Switch label="Mirror camera" checked={cam.mirror} onChange={(v) => edit((cfg) => (cfg.camera.mirror = v))} />
+        </Row>
       )}
     </>
   );
@@ -470,6 +487,20 @@ function ClipPanel({ editor, index, onDone }: { editor: EditorController; index:
       <Row label="Hide cursor">
         <Switch label="Hide cursor" checked={slice.hideCursor} onChange={(v) => editor.updateSlice(index, { hideCursor: v })} />
       </Row>
+      {editor.camera && (
+        <Row label="Camera">
+          <Segmented
+            label="Clip camera layout"
+            value={slice.cameraLayout ?? 'default'}
+            options={[
+              { value: 'default', label: 'Default' },
+              { value: 'camera', label: 'Camera only' },
+              { value: 'screen', label: 'Screen only' },
+            ]}
+            onChange={(v) => editor.updateSlice(index, { cameraLayout: v })}
+          />
+        </Row>
+      )}
       <Row label="Smooth cursor" hint="Off shows the raw cursor path">
         <Switch label="Smooth cursor" checked={!slice.disableSmoothMouseMovement} onChange={(v) => editor.updateSlice(index, { disableSmoothMouseMovement: !v })} />
       </Row>

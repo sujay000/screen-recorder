@@ -147,7 +147,9 @@ export interface ProjectConfig {
   };
   // Keyboard shortcut keycaps at the bottom of the video (off by default, as in the reference).
   shortcuts: { enabled: boolean; showSingleLetters: boolean; sizeRatio: number };
-  camera: { hide: boolean; sizeRatio01: number; position01: Vec2; aspectRatio: number; borderRadiusRatio01: number; mirror: boolean };
+  // layout: where the webcam goes by default (a bubble over the screen, or its own panel beside
+  // it). Clips can override it with Slice.cameraLayout.
+  camera: { layout: 'overlay' | 'split'; hide: boolean; sizeRatio01: number; position01: Vec2; aspectRatio: number; borderRadiusRatio01: number; mirror: boolean };
   audio: { muteMicrophone: boolean; muteSystemAudio: boolean; volume: number };
 }
 
@@ -157,6 +159,8 @@ export interface Slice {
   timeScale: number;
   hideCursor: boolean;
   disableSmoothMouseMovement: boolean;
+  // 'camera': the webcam fills the frame; 'screen': the webcam is hidden. Default: project layout.
+  cameraLayout?: 'default' | 'camera' | 'screen';
 }
 
 export interface Project {
@@ -208,7 +212,7 @@ export function defaultConfig(): ProjectConfig {
       },
     },
     shortcuts: { enabled: false, showSingleLetters: false, sizeRatio: 0.1 },
-    camera: { hide: false, sizeRatio01: 0.5, position01: { x: 1, y: 1 }, aspectRatio: 1, borderRadiusRatio01: 0.15, mirror: false },
+    camera: { layout: 'overlay', hide: false, sizeRatio01: 0.5, position01: { x: 1, y: 1 }, aspectRatio: 1, borderRadiusRatio01: 0.15, mirror: false },
     audio: { muteMicrophone: false, muteSystemAudio: false, volume: 1 },
   };
 }

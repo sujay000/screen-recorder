@@ -24,6 +24,7 @@ const LOUPE_DRIFT = 0.0125;
 const LOUPE_DRIFT_PERIOD_MS = 15000;
 const LOUPE_SHADOW_ALPHA = 0.35;
 const LOUPE_SPRING_STIFFNESS_SCALE = 1.5;
+const HIDDEN_CAMERA_SCALE = 0.9;
 const LOUPE_HIDDEN: LoupeStyle = { x01: 0.5, y01: 0.5, radius: 0, zoom: 1, bevelRatio: 0, chromaticAberration: 0, shadowAlpha: 0, presence: 0 };
 
 export interface SceneOptions {
@@ -59,7 +60,7 @@ export class Scene {
       avoidEmptyZoomArea: cfg.output.avoidEmptyZoomArea,
       camera:
         opts.hasCamera && !cfg.camera.hide
-          ? { sizeRatio01: cfg.camera.sizeRatio01, paddingRatio01: 0.5, aspectRatio: cfg.camera.aspectRatio, position01: cfg.camera.position01, zoomedScale: 0.8 }
+          ? { layout: cfg.camera.layout, sizeRatio01: cfg.camera.sizeRatio01, paddingRatio01: 0.5, aspectRatio: cfg.camera.aspectRatio, position01: cfg.camera.position01, zoomedScale: 0.8 }
           : null,
     });
     this.cursor = opts.cursor ?? new CursorModel(project, opts.hoverChangeTimes ?? []);
@@ -132,6 +133,28 @@ export class Scene {
     };
   }
 
+  // Webcam target: the layout's bubble or panel, the whole stage on a camera-only clip, or the
+  // bubble shrunk to 0.9 and faded out on a screen-only clip (zoom-camera.md §5b).
+  private cameraTarget(sourceT: number, zoomed: boolean): FrameStyle['camera'] {
+    const L = this.layout;
+    if (!L.cameraRect || !L.zoomedCameraRect) return null;
+    const ratio = this.project.config.camera.borderRadiusRatio01;
+    const mode = this.cursor.timeMap.sliceAtSource(sourceT)?.cameraLayout ?? 'default';
+    if (mode === 'camera') return { rect: L.stage.raw, radius: 0, opacity: 1 };
+    const rect = zoomed ? L.zoomedCameraRect : L.cameraRect;
+    // Radius: the un-zoomed bubble's short side times the roundness, scaled with the bubble.
+    // A split-screen panel is square-cornered; its zoomed bubble is rounded like any bubble.
+    let radius = 0;
+    if (!L.split) radius = Math.min(L.cameraRect.width, L.cameraRect.height) * ratio * (rect.width / L.cameraRect.width);
+    else if (zoomed) radius = Math.min(rect.width, rect.height) * ratio;
+    if (mode === 'screen') {
+      const s = HIDDEN_CAMERA_SCALE;
+      const hidden = { x: rect.x + (rect.width * (1 - s)) / 2, y: rect.y + (rect.height * (1 - s)) / 2, width: rect.width * s, height: rect.height * s };
+      return { rect: hidden, radius: radius * s, opacity: 0 };
+    }
+    return { rect: rect.raw, radius, opacity: 1 };
+  }
+
   restingFocus01(sourceT: number): Vec2 {
     const g = groupAt(this.restGroups, sourceT);
     if (!g) return { x: 0.5, y: 0.5 };
@@ -153,10 +176,10 @@ export class Scene {
     const drawn = !cfg.cursor.hide && pos !== null;
     const visible = drawn && this.cursor.isVisible(t);
     const typing = drawn && this.cursor.isTyping(t);
-    const camera = point ? this.layout.zoomedCameraRect : this.layout.cameraRect;
     return {
       screen: screen.raw,
-      camera: camera ? camera.raw : null,
+      screenRoundness: this.layout.split ? 0 : 1,
+      camera: this.cameraTarget(t, point !== null),
       cursor: {
         x01: pos ? pos.x / size.width : 0.5,
         y01: pos ? pos.y / size.height : 0.5,

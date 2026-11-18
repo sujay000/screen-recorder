@@ -148,7 +148,7 @@ export function buildFrameInputs(
   const before = lerpRect(now.screen, prev.screen, strength);
   const screenStatic = strength === 0 || nearlySame(now.screen, before);
 
-  const radius = cfg.output.paddingRatio01 === 0 ? 0 : cfg.styles.screenBorderRadius * layout.sourcePixelScale * zoomRatio;
+  const radius = cfg.output.paddingRatio01 === 0 ? 0 : cfg.styles.screenBorderRadius * layout.sourcePixelScale * zoomRatio * Math.max(0, now.screenRoundness);
 
   const sh = cfg.styles.shadow;
   const rad = (sh.angle * Math.PI) / 180;
@@ -231,15 +231,12 @@ export function buildFrameInputs(
   };
 }
 
-// Webcam bubble. Corner radius: the un-zoomed bubble's short side times the roundness ratio,
-// scaled with the bubble (B39 camera borderRadius / referenceWidth).
+// Webcam bubble or panel; rect, radius and opacity are animated by the scene springs.
 function cameraInputs(scene: Scene, now: FrameStyle, prev: FrameStyle, strength: number): FrameInputs['camera'] {
-  const base = scene.layout.cameraRect;
-  if (!now.camera || !base) return null;
-  const cfg = scene.project.config.camera;
-  const before = prev.camera ? lerpRect(now.camera, prev.camera, strength) : now.camera;
-  const radius = Math.min(base.width, base.height) * cfg.borderRadiusRatio01 * (now.camera.width / base.width);
-  return { now: now.camera, before: nearlySame(now.camera, before) ? now.camera : before, radius, opacity: 1, mirror: cfg.mirror };
+  const cam = now.camera;
+  if (!cam || cam.opacity <= 0.001) return null;
+  const before = prev.camera ? lerpRect(cam.rect, prev.camera.rect, strength) : cam.rect;
+  return { now: cam.rect, before: nearlySame(cam.rect, before) ? cam.rect : before, radius: Math.max(0, cam.radius), opacity: Math.min(1, cam.opacity), mirror: scene.project.config.camera.mirror };
 }
 
 // Spec: render.md §5 (the reference's loupe uniform encoder).

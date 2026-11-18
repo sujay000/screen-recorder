@@ -79,6 +79,7 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 - Loupe zooms: the rim blur reads one 9-tap ring instead of mip levels, and the magnified view
   includes the background instead of a separately frosted backdrop (only visible where the lens
   leaves the screen).
-- Webcam: only the camera-overlay layout (bubble in a corner). Split-screen, cutout and
-  fullscreen-camera layouts, face tracking, grain and LUTs are not implemented. The bubble is
-  drawn above the loupe in its own blended pass.
+- Webcam layouts: bubble (camera-overlay) and split screen as the project layout, plus per-clip
+  camera-only and screen-only. Split screen always rests the screen on its own side (the
+  reference flips it when the cursor nears the camera panel) and has no padding option.
+  Cutout (background removal), face tracking, grain and LUTs are not implemented.
