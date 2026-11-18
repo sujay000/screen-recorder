@@ -54,6 +54,10 @@ struct Params {
   _pad2: vec2f,
   screenCornerLut: array<vec4f, 4>,  // smoothed-corner ray table (core/geometry/squircle.ts)
   cameraCornerLut: array<vec4f, 4>,
+  cameraGrain: f32,          // film grain intensity 0..1
+  grainSeed: f32,
+  cameraLutIntensity: f32,   // 0 = no LUT
+  _pad3: f32,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -62,6 +66,7 @@ struct Params {
 @group(0) @binding(3) var cursorTex: texture_2d<f32>;
 @group(0) @binding(4) var bgTex: texture_2d<f32>;
 @group(0) @binding(5) var cameraTex: texture_2d<f32>;
+@group(0) @binding(6) var cameraLut: texture_3d<f32>;
 
 struct VsOut {
   @builtin(position) pos: vec4f,
@@ -317,6 +322,52 @@ fn cameraSample(p: vec2f, rect: vec4f) -> vec4f {
   return toBlurLinear(vec4f(c.rgb, 1.0)) * cov;
 }
 
+// ---- Webcam grading: 3D LUT and film grain (reference applyFilmGrain, B39:10117-10260) -----
+
+fn gradeCamera(rgb: vec3f) -> vec3f {
+  if (P.cameraLutIntensity <= 0.0) { return rgb; }
+  let n = f32(textureDimensions(cameraLut).x);
+  let uvw = clamp(rgb, vec3f(0.0), vec3f(1.0)) * ((n - 1.0) / n) + 0.5 / n;
+  let graded = textureSampleLevel(cameraLut, linearSampler, uvw, 0.0).rgb;
+  return mix(rgb, graded, P.cameraLutIntensity);
+}
+
+fn hashGrainCell(x: f32, y: f32, seed: f32) -> vec3f {
+  var h = fract(vec3f(x, y, seed) * vec3f(0.1031, 0.103, 0.0973));
+  h = h + dot(h, h.yxz + 33.33);
+  return fract((h.xxy + h.yxx) * h.zyx) * 2.0 - 1.0;
+}
+
+fn grainLattice(c: vec2f, seed: f32) -> vec3f {
+  let cell = floor(c);
+  let f = c - cell;
+  let e = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  let top = mix(hashGrainCell(cell.x, cell.y, seed), hashGrainCell(cell.x + 1.0, cell.y, seed), e.x);
+  let bottom = mix(hashGrainCell(cell.x, cell.y + 1.0, seed), hashGrainCell(cell.x + 1.0, cell.y + 1.0, seed), e.x);
+  return mix(top, bottom, e.y);
+}
+
+fn filmGrain(straight: vec3f, frag: vec2f, intensity: f32) -> vec3f {
+  let fine = frag / 1.1; // FILM_GRAIN_CELL_DEVICE_PIXELS
+  let noise = (grainLattice(fine, P.grainSeed) * 0.65 + grainLattice(fine / 1.7 + 511.5, P.grainSeed + 1024.0) * 0.35) * 3.0;
+  let grain = mix(vec3f(noise.y), noise, 0.35);
+  let luma = clamp(dot(straight, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+  let response = smoothstep(0.0, 0.1, luma) * (1.0 - 0.65 * smoothstep(0.55, 1.0, luma));
+  return clamp(straight + grain * intensity * 0.09 * response, vec3f(0.0), vec3f(1.0));
+}
+
+// Grade and grain a premultiplied blur-linear webcam colour in display space.
+fn finishCamera(c: vec4f, frag: vec2f) -> vec4f {
+  if (c.a <= 0.001 || (P.cameraGrain < 0.001 && P.cameraLutIntensity <= 0.0)) { return c; }
+  var straight = sqrt(max(c.rgb / c.a, vec3f(0.0)));
+  straight = gradeCamera(straight);
+  // Grain fades as the bubble moves (1/sqrt of its trail in device px).
+  let trail = length((P.cameraNow.xy - P.cameraBefore.xy)) * P.pxPerUnit;
+  let g = P.cameraGrain / sqrt(max(trail, 1.0));
+  if (g >= 0.001) { straight = filmGrain(straight, frag, g); }
+  return vec4f(straight * straight * c.a, c.a);
+}
+
 fn cameraLayer(p: vec2f, frag: vec2f) -> vec4f {
   let n = max(1.0, P.blurTaps);
   if (n <= 1.0 || all(P.cameraNow == P.cameraBefore)) { return cameraSample(p, P.cameraNow) * P.cameraOpacity; }
@@ -468,7 +519,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
   }
   if (P.drawMode != 1.0 && P.hasCamera > 0.5 && P.cameraOpacity > 0.001) {
     color = shadowOver(color, rectShadowMask(p, P.cameraNow, P.cameraRadius) * P.cameraOpacity);
-    color = over(cameraLayer(p, in.pos.xy), color);
+    color = over(finishCamera(cameraLayer(p, in.pos.xy), in.pos.xy), color);
   }
   var outc = fromBlurLinear(color);
   outc = vec4f(outc.rgb + (bayer8(in.pos.xy) - 0.5) / 255.0 * outc.a, outc.a);

@@ -20,6 +20,7 @@ const api: RecorderApi = {
   revealFile: (p) => ipcRenderer.invoke(IPC.revealFile, p),
   saveHoverChanges: (b, times) => ipcRenderer.invoke(IPC.saveHoverChanges, b, times),
   chooseBackgroundImage: (b) => ipcRenderer.invoke(IPC.chooseBackgroundImage, b),
+  chooseCameraLut: (b) => ipcRenderer.invoke(IPC.chooseCameraLut, b),
   onRecorderStatus: (cb) => {
     const listener = (_e: unknown, s: RecorderStatus) => cb(s);
     ipcRenderer.on(IPC.recorderStatus, listener);

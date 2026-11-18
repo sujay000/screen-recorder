@@ -48,7 +48,7 @@ export interface FrameInputs {
   clickStyle: 'none' | 'circle' | 'ripple';
   ripplePull01: number;
   loupe: LoupeInputs | null;
-  camera: null | { now: RectV; before: RectV; radius: number; opacity: number; mirror: boolean };
+  camera: null | { now: RectV; before: RectV; radius: number; opacity: number; mirror: boolean; grain: number; grainSeed: number; lutIntensity: number };
 }
 
 // Glass loupe in screen-video pixels (the reference does its lens math in video pixels, and its
@@ -136,6 +136,7 @@ export function buildFrameInputs(
   q: QualityOptions,
   sourceTimeMs: number,
   videoSize: { width: number; height: number },
+  playbackMs = sourceTimeMs,
 ): FrameInputs {
   const cfg = scene.project.config;
   const layout = scene.layout;
@@ -227,16 +228,31 @@ export function buildFrameInputs(
     clickStyle: clickEffect?.type ?? 'none',
     ripplePull01: clickEffect?.type === 'ripple' ? (clickEffect.pullSize01 ?? 0.04) : 0.04,
     loupe: loupeInputs(now, light, stage, videoSize, q),
-    camera: cameraInputs(scene, now, prev, strength),
+    camera: cameraInputs(scene, now, prev, strength, playbackMs),
   };
 }
 
 // Webcam bubble or panel; rect, radius and opacity are animated by the scene springs.
-function cameraInputs(scene: Scene, now: FrameStyle, prev: FrameStyle, strength: number): FrameInputs['camera'] {
+// Film grain is reseeded 24 times a second, cycling through 1024 seeds (B39 Hf).
+const GRAIN_SEED_FPS = 24;
+const GRAIN_SEED_CYCLE = 1024;
+
+function cameraInputs(scene: Scene, now: FrameStyle, prev: FrameStyle, strength: number, playbackMs: number): FrameInputs['camera'] {
   const cam = now.camera;
   if (!cam || cam.opacity <= 0.001) return null;
   const before = prev.camera ? lerpRect(cam.rect, prev.camera.rect, strength) : cam.rect;
-  return { now: cam.rect, before: nearlySame(cam.rect, before) ? cam.rect : before, radius: Math.max(0, cam.radius), opacity: Math.min(1, cam.opacity), mirror: scene.project.config.camera.mirror };
+  const cfg = scene.project.config.camera;
+  const grainSeed = ((Math.floor((playbackMs * GRAIN_SEED_FPS) / 1000) % GRAIN_SEED_CYCLE) + GRAIN_SEED_CYCLE) % GRAIN_SEED_CYCLE;
+  return {
+    now: cam.rect,
+    before: nearlySame(cam.rect, before) ? cam.rect : before,
+    radius: Math.max(0, cam.radius),
+    opacity: Math.min(1, cam.opacity),
+    mirror: cfg.mirror,
+    grain: Math.max(0, cfg.grain),
+    grainSeed,
+    lutIntensity: cfg.lutPath ? Math.min(1, Math.max(0, cfg.lutIntensity)) : 0,
+  };
 }
 
 // Spec: render.md §5 (the reference's loupe uniform encoder).

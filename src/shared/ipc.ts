@@ -51,6 +51,8 @@ export interface RecorderApi {
   saveHoverChanges(bundlePath: string, timesMs: number[]): Promise<void>;
   // Lets the user pick an image, copies it into recording/backgrounds/ and returns that relative path.
   chooseBackgroundImage(bundlePath: string): Promise<string | null>;
+  // Copies a .cube colour LUT into the bundle; returns its path relative to recording/.
+  chooseCameraLut(bundlePath: string): Promise<string | null>;
   onRecorderStatus(cb: (s: RecorderStatus) => void): () => void;
   // Test harness only (see main.ts runSelfTestIfRequested).
   onSelfTest(cb: (jobJson: string) => void): void;
@@ -73,6 +75,7 @@ export const IPC = {
   revealFile: 'shell:reveal',
   saveHoverChanges: 'project:save-hover',
   chooseBackgroundImage: 'project:choose-background',
+  chooseCameraLut: 'editor:choose-camera-lut',
   selfTest: 'selftest:run',
   selfTestResult: 'selftest:result',
 } as const;

@@ -459,9 +459,30 @@ function CameraSection({ editor }: { editor: EditorController }) {
         </>
       )}
       {!cam.hide && (
-        <Row label="Mirror">
-          <Switch label="Mirror camera" checked={cam.mirror} onChange={(v) => edit((cfg) => (cfg.camera.mirror = v))} />
-        </Row>
+        <>
+          <Row label="Mirror">
+            <Switch label="Mirror camera" checked={cam.mirror} onChange={(v) => edit((cfg) => (cfg.camera.mirror = v))} />
+          </Row>
+          <Row label="Film grain">
+            <Slider label="Film grain" min={0} max={1} step={0.05} value={cam.grain} format={(v) => (v === 0 ? 'Off' : `${Math.round(v * 100)}%`)} onChange={(v, f) => edit((cfg) => (cfg.camera.grain = v), f)} />
+          </Row>
+          <Row label="Colour LUT" hint={cam.lutPath ? cam.lutPath.replace(/^luts\//, '') : 'A .cube file to grade the webcam'}>
+            {cam.lutPath ? (
+              <Button size="sm" variant="ghost" onClick={() => edit((cfg) => (cfg.camera.lutPath = null))}>
+                Remove
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => void editor.chooseCameraLut()}>
+                Choose…
+              </Button>
+            )}
+          </Row>
+          {cam.lutPath && (
+            <Row label="LUT strength">
+              <Slider label="LUT strength" min={0} max={1} step={0.05} value={cam.lutIntensity} format={(v) => `${Math.round(v * 100)}%`} onChange={(v, f) => edit((cfg) => (cfg.camera.lutIntensity = v), f)} />
+            </Row>
+          )}
+        </>
       )}
     </>
   );

@@ -11,7 +11,7 @@ import overlaySource from './overlay.wgsl';
 import type { FrameInputs, LoupeInputs, RectV } from '../../core/scene/frame-inputs';
 import { squircleLutCached } from '../../core/geometry/squircle';
 
-const PARAM_FLOATS = 156;
+const PARAM_FLOATS = 160;
 const LOUPE_PARAM_FLOATS = 28;
 
 interface Pipelines {
@@ -55,6 +55,8 @@ export class Compositor {
   private bgTex!: GPUTexture;
   private cameraTex: GPUTexture | null = null;
   private overlayTex: GPUTexture | null = null;
+  private cameraLutTex: GPUTexture | null = null;
+  private noLutTex: GPUTexture | null = null;
   private hasOverlay = false;
   private hasCameraFrame = false;
   private bgSize: [number, number] = [1, 1];
@@ -148,6 +150,27 @@ export class Compositor {
     this.device.queue.copyExternalImageToTexture({ source }, { texture: this.overlayTex, premultipliedAlpha: true }, [source.width, source.height]);
   }
 
+  // 3D colour LUT for the webcam (size³ RGB, 0..1), or null for none.
+  setCameraLut(lut: { size: number; data: Float32Array } | null): void {
+    this.cameraLutTex?.destroy();
+    this.cameraLutTex = null;
+    if (!lut) return;
+    const n = lut.size;
+    const rgba = new Uint8Array(n * n * n * 4);
+    for (let i = 0; i < n * n * n; i++) {
+      for (let c = 0; c < 3; c++) rgba[i * 4 + c] = Math.round(Math.min(1, Math.max(0, lut.data[i * 3 + c])) * 255);
+      rgba[i * 4 + 3] = 255;
+    }
+    this.cameraLutTex = this.device.createTexture({ size: [n, n, n], dimension: '3d', format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    this.device.queue.writeTexture({ texture: this.cameraLutTex }, rgba, { bytesPerRow: n * 4, rowsPerImage: n }, [n, n, n]);
+  }
+
+  private lutView(): GPUTextureView {
+    if (this.cameraLutTex) return this.cameraLutTex.createView();
+    this.noLutTex ??= this.device.createTexture({ size: [1, 1, 1], dimension: '3d', format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING });
+    return this.noLutTex.createView();
+  }
+
   // null: no webcam frame at this time (before the webcam started, or no webcam).
   setCameraFrame(frame: VideoFrame | null): void {
     this.hasCameraFrame = frame !== null && frame.displayWidth > 0;
@@ -230,6 +253,7 @@ export class Compositor {
         { binding: 3, resource: this.cursorTex.createView() },
         { binding: 4, resource: this.bgTex.createView() },
         { binding: 5, resource: (this.cameraTex ?? this.bgTex).createView() },
+        { binding: 6, resource: this.lutView() },
       ],
     });
     this.fullScreenPass(enc, pipeline, bind, target, load);
@@ -280,6 +304,7 @@ export class Compositor {
       d.set([cam.radius, cam.opacity, cam.mirror ? 1 : 0, 1], 116);
       d.set([this.cameraTex.width, this.cameraTex.height, 0, 0], 120);
       d.set(squircleLutCached(cam.now.width, cam.now.height, cam.radius), 140);
+      d.set([cam.grain, cam.grainSeed, this.cameraLutTex ? cam.lutIntensity : 0, 0], 156);
     }
     d.set(squircleLutCached(f.screenNow.width, f.screenNow.height, f.screenRadius), 124);
     this.device.queue.writeBuffer(buffer, 0, d);

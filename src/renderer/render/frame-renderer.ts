@@ -33,7 +33,7 @@ export class FrameRenderer {
     if (cursor) this.compositor.setCursorImage(cursor.id, cursor.bitmap);
     const display = this.scene.project.recording.displayBounds;
     const videoSize = this.compositor.screenSize ?? { width: display.width, height: display.height };
-    const inputs = buildFrameInputs(this.scene, now, prev, cursor?.info ?? null, this.quality, sourceMs, videoSize);
+    const inputs = buildFrameInputs(this.scene, now, prev, cursor?.info ?? null, this.quality, sourceMs, videoSize, playbackMs);
     const caps = this.scene.shortcuts.capsAt(sourceMs, inputs.stage);
     const drawn = this.keycaps.draw(caps, inputs.stage, target.width, target.height, this.scene.project.config.shortcuts.sizeRatio);
     this.compositor.setOverlay(drawn ? this.keycaps.canvas : null);

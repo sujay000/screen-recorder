@@ -82,4 +82,5 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 - Webcam layouts: bubble (camera-overlay) and split screen as the project layout, plus per-clip
   camera-only and screen-only. Split screen always rests the screen on its own side (the
   reference flips it when the cursor nears the camera panel) and has no padding option.
-  Cutout (background removal), face tracking, grain and LUTs are not implemented.
+  Cutout (background removal) and face tracking are not implemented. Webcam film grain follows
+  the reference shader; .cube LUTs are stored as 8-bit 3D textures.

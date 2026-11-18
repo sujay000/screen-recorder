@@ -11,6 +11,7 @@ import { type DemuxedVideo, demuxVideo } from '../media/video-track';
 import { type ExportProgress, type ExportSettings, exportProject } from '../export/exporter';
 import { exportGif } from '../export/gif-exporter';
 import { toast } from '../ui/overlay';
+import { parseCube } from '../../core/color/cube-lut';
 import { analyseHovers } from '../media/hover-analysis';
 import { debounce } from '../util';
 import { Player } from './player';
@@ -111,6 +112,8 @@ export class EditorController {
     };
     this.backgroundKey = null;
     await this.syncBackgroundImage();
+    this.lutKey = null;
+    await this.syncCameraLut();
     const problems = await player.loadAudio();
     for (const p of problems) toast('Audio track skipped', { tone: 'error', description: p });
     await player.seek(this.playback.timeMs);
@@ -244,6 +247,32 @@ export class EditorController {
     }
   }
 
+  // Keeps the compositor's webcam LUT in sync with the config.
+  private lutKey: string | null = null;
+  private async syncCameraLut(): Promise<void> {
+    const key = this.project.config.camera.lutPath;
+    if (key === this.lutKey) return;
+    this.lutKey = key;
+    if (!key) {
+      this.compositor.setCameraLut(null);
+      return;
+    }
+    try {
+      const r = await fetch(this.opened.mediaBase + key.split('/').map(encodeURIComponent).join('/'));
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${key}`);
+      this.compositor.setCameraLut(parseCube(await r.text()));
+      this.player?.setScene(this.scene);
+    } catch (err) {
+      this.compositor.setCameraLut(null);
+      toast('Camera LUT could not be loaded', { tone: 'error', description: `${key}: ${(err as Error).message}` });
+    }
+  }
+
+  async chooseCameraLut(): Promise<void> {
+    const rel = await window.recorder.chooseCameraLut(this.project.path);
+    if (rel) this.updateConfig((c) => (c.camera.lutPath = rel));
+  }
+
   async chooseBackgroundImage(): Promise<void> {
     const rel = await window.recorder.chooseBackgroundImage(this.project.path);
     if (!rel) return;
@@ -255,6 +284,7 @@ export class EditorController {
 
   private changed(final: boolean): void {
     void this.syncBackgroundImage();
+    void this.syncCameraLut();
     this.scene = this.buildScene();
     this.player?.setScene(this.scene);
     this.version++;
