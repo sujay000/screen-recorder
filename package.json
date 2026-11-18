@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dist:win": "npm run build:recorder && node scripts/build.mjs && electron-builder --win zip --x64 --publish never",
     "dist:mac": "node scripts/build.mjs && electron-builder --mac dir --arm64",
-    "build:recorder": "cd native/win-recorder && cargo build --release --target x86_64-pc-windows-gnu && cd ../.. && node -e \"require('fs').mkdirSync('native/bin',{recursive:true});require('fs').copyFileSync('native/win-recorder/target/x86_64-pc-windows-gnu/release/recorder.exe','native/bin/recorder.exe')\""
+    "build:recorder": "cd native/win-recorder && cargo build --release --target x86_64-pc-windows-gnu && cd ../.. && node -e \"require('fs').mkdirSync('native/bin',{recursive:true});require('fs').copyFileSync('native/win-recorder/target/x86_64-pc-windows-gnu/release/recorder.exe','native/bin/recorder.exe')\"",
+    "build:recorder:native": "cd native/win-recorder && cargo build --release && cd ../.. && node -e \"require('fs').mkdirSync('native/bin',{recursive:true});require('fs').copyFileSync('native/win-recorder/target/release/recorder.exe','native/bin/recorder.exe')\"",
+    "dist:win:native": "npm run build:recorder:native && node scripts/build.mjs && electron-builder --win zip --x64 --publish never"
   },
   "build": {
     "appId": "dev.sujsap.recorder",
