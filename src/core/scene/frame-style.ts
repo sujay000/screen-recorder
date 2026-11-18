@@ -9,6 +9,20 @@ export interface FrameStyle {
   cursor: { x01: number; y01: number; opacity: number; scale: number; rotation: number; fadeBlur: number };
   background: { scale: number; originX: number; originY: number; blur: number };
   zoom: number;
+  loupe: LoupeStyle;
+}
+
+// Glass loupe, in recording coordinates: centre 0..1 of width/height, radius as a fraction of
+// the recording width. presence 0 = invisible (but still placed, so it can grow in place).
+export interface LoupeStyle {
+  x01: number;
+  y01: number;
+  radius: number;
+  zoom: number;
+  bevelRatio: number;
+  chromaticAberration: number;
+  shadowAlpha: number;
+  presence: number;
 }
 
 export function flatten(s: FrameStyle): Record<string, number> {
@@ -28,6 +42,14 @@ export function flatten(s: FrameStyle): Record<string, number> {
     bgy: s.background.originY,
     bgb: s.background.blur,
     zoom: s.zoom,
+    lx: s.loupe.x01,
+    ly: s.loupe.y01,
+    lr: s.loupe.radius,
+    lz: s.loupe.zoom,
+    lb: s.loupe.bevelRatio,
+    lc: s.loupe.chromaticAberration,
+    ls: s.loupe.shadowAlpha,
+    lp: s.loupe.presence,
   };
   if (s.camera) {
     r.kx = s.camera.x;
@@ -45,5 +67,6 @@ export function unflatten(r: Record<string, number>): FrameStyle {
     cursor: { x01: r.cx01, y01: r.cy01, opacity: r.cop, scale: r.csc, rotation: r.crot, fadeBlur: r.cblur },
     background: { scale: r.bgs, originX: r.bgx, originY: r.bgy, blur: r.bgb },
     zoom: r.zoom,
+    loupe: { x01: r.lx, y01: r.ly, radius: r.lr, zoom: r.lz, bevelRatio: r.lb, chromaticAberration: r.lc, shadowAlpha: r.ls, presence: r.lp },
   };
 }

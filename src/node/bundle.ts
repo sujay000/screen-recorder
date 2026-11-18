@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BundleReader } from '../core/project/loader';
 import { loadRecording } from '../core/project/loader';
-import { defaultConfig, defaultSlices, type Project, type ProjectConfig, type Slice, type Zoom } from '../core/project/model';
+import { defaultConfig, defaultSlices, LOUPE_DEFAULTS, type Project, type ProjectConfig, type Slice, type Zoom } from '../core/project/model';
 import { generateAutoZooms } from '../core/camera/zoom';
 
 export const EDITOR_FILE = 'recorder-project.json';
@@ -34,9 +34,14 @@ export function openProject(bundlePath: string): Project {
   const name = path.basename(bundlePath).replace(/\.(screenstudio|recording)$/, '');
   if (fs.existsSync(statePath)) {
     const s = JSON.parse(fs.readFileSync(statePath, 'utf8')) as SavedEditorState;
-    return { path: bundlePath, name, recording, config: mergeDefaults(defaultConfig(), s.config), zooms: s.zooms ?? generateAutoZooms(recording), slices: s.slices ?? defaultSlices(recording) };
+    return { path: bundlePath, name, recording, config: mergeDefaults(defaultConfig(), s.config), zooms: s.zooms ? s.zooms.map(withZoomDefaults) : generateAutoZooms(recording), slices: s.slices ?? defaultSlices(recording) };
   }
   return { path: bundlePath, name, recording, config: defaultConfig(), zooms: generateAutoZooms(recording), slices: defaultSlices(recording) };
+}
+
+// Zooms saved before loupes existed are screen zooms.
+function withZoomDefaults(z: Zoom): Zoom {
+  return { ...z, presentation: z.presentation ?? 'screen', loupeOptions: { ...LOUPE_DEFAULTS, ...z.loupeOptions } };
 }
 
 // Deep merge saved values over defaults, so settings added in later versions get their default

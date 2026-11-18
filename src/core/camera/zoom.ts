@@ -1,5 +1,6 @@
 // Automatic zooms and camera targeting (spec: zoom-camera.md §1-4).
 
+import { LOUPE_DEFAULTS } from '../project/model';
 import type { MouseEvent, Recording, Zoom } from '../project/model';
 import type { Vec2 } from '../geometry/rect';
 
@@ -24,6 +25,8 @@ export function makeZoom(sourceStartMs: number, sourceEndMs: number, zoom = ZOOM
     manualTargetPoint: { x: 0.5, y: 0.5 },
     isDisabled: false,
     hasInstantAnimation: false,
+    presentation: 'screen',
+    loupeOptions: { ...LOUPE_DEFAULTS },
   };
 }
 
@@ -75,16 +78,52 @@ export function zoomAt(zooms: Zoom[], t: number): Zoom | null {
   return null;
 }
 
-export function screenMovingZoom(zooms: Zoom[], t: number, startAnimationEarly: boolean): Zoom | null {
+const leadInMs = (startAnimationEarly: boolean) => (startAnimationEarly ? 350 : 0);
+
+// The zoom covering t, or the next one if t is inside its lead-in.
+function activeOrLeadIn(zooms: Zoom[], t: number, leadIn: number): Zoom | null {
   const active = zoomAt(zooms, t);
   if (active) return active;
-  const leadIn = startAnimationEarly ? 350 : 0;
   if (leadIn > 0) {
     const next = zooms
       .filter((z) => !z.isDisabled && z.sourceStartMs >= t)
       .sort((a, b) => a.sourceStartMs - b.sourceStartMs)[0];
     if (next && !next.hasInstantAnimation && t >= next.sourceStartMs - leadIn) return next;
   }
+  return null;
+}
+
+// Zoom that moves the screen at t. Loupe zooms never move the screen.
+export function screenMovingZoom(zooms: Zoom[], t: number, startAnimationEarly: boolean): Zoom | null {
+  return activeOrLeadIn(
+    zooms.filter((z) => z.presentation !== 'loupe'),
+    t,
+    leadInMs(startAnimationEarly),
+  );
+}
+
+// Loupe zoom shown at t. A screen zoom covering t hides loupes, except for their lead-in.
+export function loupeZoomAt(zooms: Zoom[], t: number, startAnimationEarly: boolean): Zoom | null {
+  const loupes = zooms.filter((z) => z.presentation === 'loupe');
+  const active = zoomAt(loupes, t);
+  if (active) return active;
+  if (zoomAt(zooms, t)) return null;
+  return activeOrLeadIn(loupes, t, leadInMs(startAnimationEarly));
+}
+
+// The enabled zoom (of any kind) that ends last before t, and the one that starts first after it;
+// the nearer one decides what the loupe rests on between zooms.
+export function nearestZoomAround(zooms: Zoom[], t: number): { zoom: Zoom; edgeMs: number } | null {
+  let prev: Zoom | null = null;
+  let next: Zoom | null = null;
+  for (const z of zooms) {
+    if (z.sourceEndMs < t && (!prev || z.sourceEndMs > prev.sourceEndMs)) prev = z;
+    if (z.sourceStartMs > t && (!next || z.sourceStartMs < next.sourceStartMs)) next = z;
+  }
+  const dPrev = prev ? t - prev.sourceEndMs : Infinity;
+  const dNext = next ? next.sourceStartMs - t : Infinity;
+  if (prev && dPrev <= dNext) return { zoom: prev, edgeMs: prev.sourceEndMs };
+  if (next) return { zoom: next, edgeMs: next.sourceStartMs };
   return null;
 }
 

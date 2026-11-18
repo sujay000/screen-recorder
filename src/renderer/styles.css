@@ -237,6 +237,7 @@ h1, h2, h3, p { margin: 0; }
 .zoom-block:hover { filter: brightness(1.08); }
 .zoom-block:active { cursor: grabbing; }
 .zoom-block.manual { background: linear-gradient(90deg, #2fa37a, #2b9bb8); }
+.zoom-block.loupe { background: linear-gradient(90deg, #c2733a, #c94f7c); }
 .zoom-block.disabled { opacity: 0.4; }
 .zoom-block.selected { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px rgba(255, 255, 255, 0.85); }
 .zoom-block .handle { position: absolute; top: 0; bottom: 0; width: 10px; cursor: ew-resize; }

@@ -59,7 +59,9 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 3. `buildFrameInputs` turns the style of this and the previous frame into GPU numbers (motion-blur
    trail, corner radius, shadow light, cursor quad).
 4. `Compositor.render` draws background → shadow → screen → click effect → cursor in one pass in
-   gamma-2 premultiplied space, then dithers.
+   gamma-2 premultiplied space, then dithers. With a glass loupe on screen it also draws the scene
+   magnified about the lens centre and combines both in `loupe.wgsl` (refraction, colour fringe,
+   rim reflection, shine, shadow).
 
 ## Known differences from the reference
 
@@ -68,6 +70,8 @@ recording time: `processTimeMs − session.processTimeStartMs + session.recordin
 - Hover detection (`core/cursor/hover-detector.ts`) matches the reference on the two sample
   recordings (Area: identical; 100 s test: 4 of 5 identical, 1 a frame earlier). Repeat
   suppression within 120 ms is inferred from those results, not read from the binary.
-- Loupe (magnifier) zooms are not implemented.
+- Loupe zooms: the rim blur reads one 9-tap ring instead of mip levels, and the magnified view
+  includes the background instead of a separately frosted backdrop (only visible where the lens
+  leaves the screen).
 - No webcam or camera layouts in the UI yet (the layout math in `core/camera/layout.ts` supports
   the overlay bubble).

@@ -163,13 +163,13 @@ export function Timeline({ editor, selectedId, onSelect }: { editor: EditorContr
           {zooms.map((z) => (
             <div
               key={z.id}
-              className={`zoom-block ${z.type === 'manual' ? 'manual' : ''} ${z.isDisabled ? 'disabled' : ''} ${z.id === selectedId ? 'selected' : ''}`}
+              className={`zoom-block ${z.presentation === 'loupe' ? 'loupe' : z.type === 'manual' ? 'manual' : ''} ${z.isDisabled ? 'disabled' : ''} ${z.id === selectedId ? 'selected' : ''}`}
               style={{ left: x(z.sourceStartMs), width: Math.max(8, x(z.sourceEndMs) - x(z.sourceStartMs)) }}
               onPointerDown={(e) => drag(e, z, 'move')}
             >
               <div className="handle left" onPointerDown={(e) => drag(e, z, 'left')} />
               <ZoomIcon size={13} />
-              <span>{z.zoom.toFixed(1)}×</span>
+              <span>{z.presentation === 'loupe' ? `Loupe ${z.zoom.toFixed(1)}×` : `${z.zoom.toFixed(1)}×`}</span>
               <div className="handle right" onPointerDown={(e) => drag(e, z, 'right')} />
             </div>
           ))}

@@ -86,7 +86,20 @@ export interface Zoom {
   manualTargetPoint: Vec2;
   isDisabled: boolean;
   hasInstantAnimation: boolean;
+  // 'screen' zooms the whole screen; 'loupe' keeps the screen still and shows a glass magnifier
+  // over the target instead.
+  presentation: 'screen' | 'loupe';
+  loupeOptions: LoupeOptions;
 }
+
+export interface LoupeOptions {
+  radius01: number; // lens radius, fraction of the longer recording side (UI: 0.25..0.75)
+  bevelRatio: number; // glass rim width, fraction of the radius
+  chromaticAberration: number; // 0..1, colour fringe strength at the rim
+  hasGlassOptics: boolean; // false = flat magnifier, no rim refraction or fringe
+}
+
+export const LOUPE_DEFAULTS: LoupeOptions = { radius01: 0.35, bevelRatio: 0.2, chromaticAberration: 0.5, hasGlassOptics: true };
 
 export interface GradientStop {
   color: string;

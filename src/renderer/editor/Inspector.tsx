@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { SPRING_PRESETS, type SpringConfig } from '../../core/animation/spring';
-import type { Zoom } from '../../core/project/model';
+import type { LoupeOptions, Zoom } from '../../core/project/model';
 import { Button, Row, Segmented, Slider, Switch } from '../ui/controls';
 import { CursorIcon, ImageIcon, MotionIcon, RestoreIcon, TrashIcon, WaveIcon, ZoomIcon } from '../ui/icons';
 import type { EditorController } from './editor-controller';
@@ -310,15 +310,38 @@ export function Inspector({ editor, selectedZoom, onDeselect }: { editor: Editor
 }
 
 function ZoomPanel({ editor, zoom, onDone }: { editor: EditorController; zoom: Zoom; onDone: () => void }) {
+  const isLoupe = zoom.presentation === 'loupe';
+  const setLoupe = (patch: Partial<LoupeOptions>) => editor.updateZoom(zoom.id, { loupeOptions: { ...zoom.loupeOptions, ...patch } });
   return (
     <div className="panel">
       <div className="panel-header">
         <ZoomIcon size={18} />
-        <h3>Zoom</h3>
+        <h3>{isLoupe ? 'Glass loupe' : 'Zoom'}</h3>
         <Button size="sm" variant="ghost" onClick={onDone}>
           Done
         </Button>
       </div>
+      <Row label="Style" hint={isLoupe ? 'Magnifier over a still screen' : 'The whole screen zooms in'}>
+        <Segmented
+          label="Zoom style"
+          value={zoom.presentation}
+          options={[
+            { value: 'screen', label: 'Screen' },
+            { value: 'loupe', label: 'Loupe' },
+          ]}
+          onChange={(v) => editor.updateZoom(zoom.id, { presentation: v })}
+        />
+      </Row>
+      {isLoupe && (
+        <>
+          <Row label="Lens size">
+            <Slider label="Lens size" min={0.25} max={0.75} step={0.01} value={zoom.loupeOptions.radius01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setLoupe({ radius01: v })} />
+          </Row>
+          <Row label="Glass" hint="Curved rim with refraction and colour fringe">
+            <Switch label="Glass optics" checked={zoom.loupeOptions.hasGlassOptics} onChange={(v) => setLoupe({ hasGlassOptics: v })} />
+          </Row>
+        </>
+      )}
       <Row label="Level">
         <Slider label="Zoom level" min={1} max={4} step={0.1} value={zoom.zoom} format={(v) => `${v.toFixed(1)}×`} onChange={(v) => editor.updateZoom(zoom.id, { zoom: v })} />
       </Row>

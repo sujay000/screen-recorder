@@ -41,6 +41,9 @@ struct Params {
   videoWidthUnits: f32,      // screen rect width, for effect sizes
   ripplePull01: f32,         // ripple calm radius, fraction of the video width
   clicks: array<vec4f, 3>,   // x, y (stage units), age01, unused
+  viewCenter: vec2f,         // draw the stage magnified viewScale x about this point
+  viewScale: f32,            // (1 = normal; the loupe pass reads a magnified copy)
+  _pad: f32,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -383,7 +386,7 @@ fn clickLayer(p: vec2f) -> vec4f {
 
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4f {
-  let p = in.stage;
+  let p = P.viewCenter + (in.stage - P.viewCenter) / P.viewScale;
   var color = background(p);
   // Shadow goes only where the screen does not cover.
   let shadow = screenShadowMask(p) * P.shadowColor.a * P.hasScreen;

@@ -3,12 +3,12 @@
 // cursor.md §4, render.md §4.4). Springs are applied by animation/timeline.ts.
 
 import { Layout } from '../camera/layout';
-import { decimate, groupAt, groupSamples, isInInstantSnapWindow, type MovementGroup, screenMovingZoom, zoomSamples } from '../camera/zoom';
+import { decimate, groupAt, groupSamples, isInInstantSnapWindow, loupeZoomAt, type MovementGroup, nearestZoomAround, screenMovingZoom, zoomSamples } from '../camera/zoom';
 import { type ResolvedSpringConfig, SPRING_PRESETS, resolveSpring } from '../animation/spring';
 import { CursorModel } from '../cursor/cursor';
 import type { MouseEvent, Project, Zoom } from '../project/model';
 import type { Vec2 } from '../geometry/rect';
-import type { FrameStyle } from './frame-style';
+import type { FrameStyle, LoupeStyle } from './frame-style';
 
 const INSTANT = resolveSpring(SPRING_PRESETS.instant);
 const FADE = resolveSpring(SPRING_PRESETS.medium);
@@ -18,6 +18,12 @@ const FOLLOW_ROTATION = resolveSpring({ stiffness: 320, damping: 28, mass: 1 });
 const PRESS_SCALE = 0.9;
 const FADE_BLUR_PX = 10;
 const BG_ZOOM_GROWTH = 0.125;
+// Loupe (spec: zoom-camera.md §4): the lens drifts slowly around its target so it looks hand-held.
+const LOUPE_DRIFT = 0.0125;
+const LOUPE_DRIFT_PERIOD_MS = 15000;
+const LOUPE_SHADOW_ALPHA = 0.35;
+const LOUPE_SPRING_STIFFNESS_SCALE = 1.5;
+const LOUPE_HIDDEN: LoupeStyle = { x01: 0.5, y01: 0.5, radius: 0, zoom: 1, bevelRatio: 0, chromaticAberration: 0, shadowAlpha: 0, presence: 0 };
 
 export interface SceneOptions {
   hasCamera: boolean;
@@ -81,7 +87,11 @@ export class Scene {
 
   zoomPointAt(sourceT: number): { position01: Vec2; scale: number } | null {
     const z = screenMovingZoom(this.project.zooms, sourceT, this.project.config.zooms.startAnimationEarly);
-    if (!z) return null;
+    return z ? this.pointOf(z, sourceT) : null;
+  }
+
+  // Where zoom z looks at time t: its manual point, or the centre of the cursor's movement group.
+  private pointOf(z: Zoom, sourceT: number): { position01: Vec2; scale: number } {
     if (z.type === 'manual') return { position01: z.manualTargetPoint, scale: z.zoom };
     const groups = this.groupsFor(z);
     const g = groupAt(groups, sourceT) ?? groups[0];
@@ -89,6 +99,34 @@ export class Scene {
     const c = g.center;
     const size = this.project.recording.displayBounds;
     return { position01: { x: c.x / size.width, y: c.y / size.height }, scale: z.zoom };
+  }
+
+  // Loupe target at t. Between zooms the lens rests, invisible and unmagnified, where the nearest
+  // loupe zoom starts or ends, so it grows in place instead of flying in.
+  loupeAt(sourceT: number): LoupeStyle {
+    const z = loupeZoomAt(this.project.zooms, sourceT, this.project.config.zooms.startAnimationEarly);
+    if (z) return this.loupeShape(z, sourceT);
+    const near = nearestZoomAround(this.project.zooms, sourceT);
+    if (!near || near.zoom.isDisabled || near.zoom.presentation !== 'loupe') return LOUPE_HIDDEN;
+    return { ...this.loupeShape(near.zoom, near.edgeMs), zoom: 1, bevelRatio: 0, chromaticAberration: 0, shadowAlpha: 0, presence: 0 };
+  }
+
+  private loupeShape(z: Zoom, sourceT: number): LoupeStyle {
+    const p = this.pointOf(z, sourceT).position01;
+    const size = this.project.recording.displayBounds;
+    const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+    const o = z.loupeOptions;
+    const half = LOUPE_DRIFT_PERIOD_MS / 2;
+    return {
+      x01: Math.sin((sourceT / (LOUPE_DRIFT_PERIOD_MS * 0.8)) * Math.PI * 2) * LOUPE_DRIFT + clamp01(p.x),
+      y01: Math.cos(((sourceT + half) / (LOUPE_DRIFT_PERIOD_MS * 1.2)) * Math.PI * 2) * LOUPE_DRIFT + clamp01(p.y),
+      radius: (o.radius01 * Math.max(size.width, size.height)) / size.width,
+      zoom: z.zoom,
+      bevelRatio: o.hasGlassOptics ? o.bevelRatio : 0,
+      chromaticAberration: o.hasGlassOptics ? o.chromaticAberration : 0,
+      shadowAlpha: LOUPE_SHADOW_ALPHA,
+      presence: 1,
+    };
   }
 
   restingFocus01(sourceT: number): Vec2 {
@@ -131,6 +169,7 @@ export class Scene {
         blur: cfg.styles.background.blur > 0 || zoom <= 1 ? 0 : 8 * zoom,
       },
       zoom,
+      loupe: this.loupeAt(t),
     };
   }
 
@@ -141,7 +180,9 @@ export class Scene {
     const slice = this.cursor.timeMap.sliceAtSource(t);
     const cursorSpring = cfg.animations.mouseMovementSpring === null || slice?.disableSmoothMouseMovement ? INSTANT : resolveSpring(cfg.animations.mouseMovementSpring);
     const typing = this.cursor.isTyping(t);
+    const loupeSpring = screenSpring.mass === 0 ? screenSpring : { ...screenSpring, stiffness: screenSpring.stiffness * LOUPE_SPRING_STIFFNESS_SCALE };
     return (key: string) => {
+      if (key[0] === 'l') return loupeSpring;
       switch (key) {
         case 'cx01':
         case 'cy01':

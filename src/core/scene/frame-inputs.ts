@@ -47,6 +47,26 @@ export interface FrameInputs {
   clicks: { x: number; y: number; age01: number }[];
   clickStyle: 'none' | 'circle' | 'ripple';
   ripplePull01: number;
+  loupe: LoupeInputs | null;
+}
+
+// Glass loupe in screen-video pixels (the reference does its lens math in video pixels, and its
+// 1-pixel minimums only mean the same thing there).
+export interface LoupeInputs {
+  videoSize: [number, number];
+  center: [number, number];
+  radius: number;
+  bevel: number;
+  zoom: number;
+  chromaticAberration: number;
+  lightDirection: [number, number]; // unit vector from the lens centre toward the light
+  shineExponent: number;
+  lightTilt: number;
+  shadowAlpha: number;
+  shadowSize: number;
+  presence: number;
+  fringeReads: number; // colour-fringe samples: 16 on export, 4 in the preview
+  magnifyCenter: [number, number]; // lens centre in stage units
 }
 
 // Image facts the cursor size math needs.
@@ -65,6 +85,8 @@ export interface QualityOptions {
 const SHADOW_BLUR_SCALE = 8;
 const LIGHT_DISTANCE = 1.5;
 const CIRCLE_MS = 450;
+const LOUPE_LIGHT_SIZE = 0.1;
+const LOUPE_SHADOW_SIZE = 0.9;
 const RIPPLE_MS = 1000;
 
 export function srgbHexToLinear(hex: string): [number, number, number] {
@@ -112,6 +134,7 @@ export function buildFrameInputs(
   cursorImage: CursorImageInfo | null,
   q: QualityOptions,
   sourceTimeMs: number,
+  videoSize: { width: number; height: number },
 ): FrameInputs {
   const cfg = scene.project.config;
   const layout = scene.layout;
@@ -202,5 +225,42 @@ export function buildFrameInputs(
     clicks,
     clickStyle: clickEffect?.type ?? 'none',
     ripplePull01: clickEffect?.type === 'ripple' ? (clickEffect.pullSize01 ?? 0.04) : 0.04,
+    loupe: loupeInputs(now, light, stage, videoSize, q),
+  };
+}
+
+// Spec: render.md §5 (the reference's loupe uniform encoder).
+function loupeInputs(style: FrameStyle, light: [number, number], stage: { width: number; height: number }, video: { width: number; height: number }, q: QualityOptions): LoupeInputs | null {
+  const l = style.loupe;
+  const v = style.screen;
+  const W = video.width;
+  const H = video.height;
+  const radius = Math.max(0, l.radius) * W;
+  const bevel = radius * Math.min(1, Math.max(0, l.bevelRatio));
+  const zoom = Math.max(l.zoom, 0.05);
+  const shadowAlpha = Math.min(1, Math.max(0, l.shadowAlpha));
+  const visible = radius > 0.5 && (bevel > 0.05 || Math.abs(zoom - 1) > 0.001 || shadowAlpha > 0.001);
+  if (!visible) return null;
+  const center: [number, number] = [l.x01 * W, l.y01 * H];
+  // The same light as the screen shadow, expressed relative to the screen.
+  const dx = ((light[0] - v.x) / v.width) * W - center[0];
+  const dy = ((light[1] - v.y) / v.height) * H - center[1];
+  const dist = Math.hypot(dx, dy);
+  const lightHeight = (Math.max(stage.width, stage.height) / v.width) * W;
+  return {
+    videoSize: [W, H],
+    center,
+    radius,
+    bevel,
+    zoom,
+    chromaticAberration: Math.min(1, Math.max(0, l.chromaticAberration)),
+    lightDirection: dist < 0.001 ? [0, -1] : [dx / dist, dy / dist],
+    shineExponent: Math.min(24, Math.max(1.5, dist / (LOUPE_LIGHT_SIZE * W))),
+    lightTilt: Math.min(dist / Math.max(lightHeight, 0.05 * W), 2),
+    shadowAlpha,
+    shadowSize: LOUPE_SHADOW_SIZE * W,
+    presence: Math.min(1, Math.max(0, l.presence)),
+    fringeReads: q.motionBlurTaps >= 16 ? 16 : 4,
+    magnifyCenter: [v.x + l.x01 * v.width, v.y + l.y01 * v.height],
   };
 }

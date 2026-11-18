@@ -26,7 +26,9 @@ export class FrameRenderer {
     const prev = this.timeline.previousFrameStyle(playbackMs);
     const cursor = this.cursors.get(this.scene.cursor.cursorIdAt(sourceMs));
     if (cursor) this.compositor.setCursorImage(cursor.id, cursor.bitmap);
-    const inputs = buildFrameInputs(this.scene, now, prev, cursor?.info ?? null, this.quality, sourceMs);
+    const display = this.scene.project.recording.displayBounds;
+    const videoSize = this.compositor.screenSize ?? { width: display.width, height: display.height };
+    const inputs = buildFrameInputs(this.scene, now, prev, cursor?.info ?? null, this.quality, sourceMs, videoSize);
     this.compositor.render(target, inputs, target.height / inputs.stage.height);
   }
 }
