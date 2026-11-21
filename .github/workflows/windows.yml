@@ -1,9 +1,13 @@
 # Builds and tests the Windows app on a real Windows machine: unit tests, the native recorder,
 # a scripted recording, an in-app export of it, and the packaged zip.
+# Pushing a tag vX.Y.Z (matching package.json's version) also publishes that zip as a GitHub Release.
 name: windows
 on:
   push:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
@@ -66,6 +70,12 @@ jobs:
           ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames:format=duration -of compact "$RUNNER_TEMP/ci-export.mp4"
       - name: Package
         run: npx electron-builder --win zip --x64 --publish never
+      # Just the app, so it is easy to find (the artifact below also holds the CI test files).
+      - uses: actions/upload-artifact@v6
+        with:
+          name: recorder-app
+          path: release/*.zip
+          if-no-files-found: error
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -74,3 +84,27 @@ jobs:
             release/*.zip
             ${{ runner.temp }}/ci.recording
             ${{ runner.temp }}/ci-export.mp4*
+
+  # Only for version tags, and only after the build and all checks passed. The only job that can write.
+  release:
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v6
+        with:
+          name: recorder-app
+          path: dist-release
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          [ "$TAG" = "v$version" ] || { echo "Tag $TAG does not match package.json version $version"; exit 1; }
+          zip="dist-release/Recorder-$version-win.zip"
+          [ -f "$zip" ] || { echo "Missing $zip"; ls -R dist-release; exit 1; }
+          gh release create "$TAG" "$zip" --title "Recorder $version" --generate-notes
